@@ -48,12 +48,15 @@ export function ProfileForm() {
   const [saving, setSaving] = useState(false);
   const [emailChangePending, setEmailChangePending] = useState(false);
 
-  // Seed form state once the profile loads.
+  // Seed form state from profile (or user auth data as fallback).
   useEffect(() => {
-    if (!profile) return;
-    setFullName(profile.full_name ?? '');
-    setEmail(profile.email ?? '');
-  }, [profile]);
+    if (profile) {
+      setFullName(profile.full_name ?? '');
+      setEmail(profile.email ?? user?.email ?? '');
+    } else if (user?.email) {
+      setEmail(user.email);
+    }
+  }, [profile, user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup object URLs to avoid leaks.
   useEffect(() => {
@@ -102,22 +105,22 @@ export function ProfileForm() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !profile) return;
+    if (!user) return;
 
     const trimmedName = fullName.trim();
     if (!trimmedName) {
       toast.error('Display name is required');
       return;
     }
-    const trimmedEmail = email.trim();
-    if (!EMAIL_RE.test(trimmedEmail)) {
+    const trimmedEmail = (email.trim() || user.email || '');
+    if (trimmedEmail && !EMAIL_RE.test(trimmedEmail)) {
       toast.error('Enter a valid email address');
       return;
     }
 
     setSaving(true);
     try {
-      let nextAvatarUrl: string | null = profile.avatar_url ?? null;
+      let nextAvatarUrl: string | null = profile?.avatar_url ?? null;
 
       // Upload a newly-staged image, if any.
       if (pendingAvatar) {
@@ -142,14 +145,15 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
+      // Upsert profile row — creates it if it doesn't exist yet.
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          user_id: user.id,
           full_name: trimmedName,
+          email: trimmedEmail || user.email,
           avatar_url: nextAvatarUrl,
-        })
-        .eq('user_id', user.id);
+        }, { onConflict: 'user_id' });
       if (updateError) {
         throw new Error(`Save failed: ${updateError.message}`);
       }
@@ -160,7 +164,8 @@ export function ProfileForm() {
       // after the user clicks the link (handled by the handle_new_user
       // trigger pattern in production deployments).
       let emailSent = false;
-      if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
+      const currentEmail = (profile?.email ?? user.email ?? '').toLowerCase();
+      if (trimmedEmail && trimmedEmail.toLowerCase() !== currentEmail) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: trimmedEmail,
         });
@@ -194,12 +199,15 @@ export function ProfileForm() {
     }
   };
 
+  // Allow saving whenever there's a name, regardless of whether the
+  // profile row exists yet (it will be created on first save via upsert).
   const dirty =
-    !!profile &&
-    (fullName.trim() !== (profile.full_name ?? '') ||
-      email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+    fullName.trim().length > 0 &&
+    (fullName.trim() !== (profile?.full_name ?? '') ||
+      email.trim().toLowerCase() !== (profile?.email ?? user?.email ?? '').toLowerCase() ||
       pendingAvatar !== null ||
-      removeAvatar);
+      removeAvatar ||
+      !profile);
 
   const joined = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, {
@@ -210,10 +218,10 @@ export function ProfileForm() {
     : '—';
 
   return (
-    <Card className="bg-slate-900/40 border-slate-800">
+    <Card className="bg-card/40 border-border">
       <CardHeader>
-        <CardTitle className="text-white">Profile</CardTitle>
-        <CardDescription className="text-slate-400">
+        <CardTitle className="text-foreground">Profile</CardTitle>
+        <CardDescription className="text-muted-foreground">
           How you show up across the app. Your avatar and name appear in the
           header, sidebar, and anywhere your teammates see you.
         </CardDescription>
@@ -227,7 +235,7 @@ export function ProfileForm() {
               {currentAvatar ? (
                 <AvatarImage src={currentAvatar} alt={fullName || 'Avatar'} />
               ) : null}
-              <AvatarFallback className="bg-violet-500/10 text-base text-violet-400">
+              <AvatarFallback className="bg-foreground/10 text-base text-foreground">
                 {initial}
               </AvatarFallback>
             </Avatar>
@@ -255,13 +263,13 @@ export function ProfileForm() {
                   variant="ghost"
                   onClick={onRemoveAvatar}
                   disabled={saving}
-                  className="text-slate-400 hover:text-white"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <Trash2 className="size-4" />
                   Remove
                 </Button>
               )}
-              <p className="w-full text-xs text-slate-500">
+              <p className="w-full text-xs text-muted-foreground">
                 PNG, JPG, WebP, or GIF. Up to 2 MB.
               </p>
             </div>
@@ -269,7 +277,7 @@ export function ProfileForm() {
 
           {/* Name */}
           <div className="space-y-2">
-            <Label htmlFor="profile-full-name" className="text-slate-200">
+            <Label htmlFor="profile-full-name" className="text-foreground">
               Display name
             </Label>
             <Input
@@ -285,7 +293,7 @@ export function ProfileForm() {
 
           {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="profile-email" className="text-slate-200">
+            <Label htmlFor="profile-email" className="text-foreground">
               Email
             </Label>
             <Input
@@ -309,24 +317,24 @@ export function ProfileForm() {
           </div>
 
           {/* Read-only block */}
-          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          <div className="rounded-lg border border-border bg-card/60 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Account details
             </p>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-slate-500">Role</dt>
-                <dd className="mt-0.5 font-mono text-slate-200">
+                <dt className="text-muted-foreground">Role</dt>
+                <dd className="mt-0.5 font-mono text-foreground">
                   {profile?.role ?? 'user'}
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-500">Joined</dt>
-                <dd className="mt-0.5 text-slate-200">{joined}</dd>
+                <dt className="text-muted-foreground">Joined</dt>
+                <dd className="mt-0.5 text-foreground">{joined}</dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-slate-500">User ID</dt>
-                <dd className="mt-0.5 break-all font-mono text-xs text-slate-400">
+                <dt className="text-muted-foreground">User ID</dt>
+                <dd className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
                   {user?.id ?? '—'}
                 </dd>
               </div>
@@ -334,14 +342,14 @@ export function ProfileForm() {
           </div>
 
           {!profile && (
-            <p className="flex items-center gap-2 text-sm text-slate-400">
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CircleAlert className="size-4" />
               Loading your profile…
             </p>
           )}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={saving || !dirty || !profile}>
+            <Button type="submit" disabled={saving || !dirty}>
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />

@@ -209,6 +209,27 @@ export interface BroadcastRecipient {
 }
 
 // ============================================================
+// Team Members (migration 009)
+// ============================================================
+
+export type TeamMemberRole = 'admin' | 'agent' | 'viewer';
+export type TeamMemberStatus = 'pending' | 'active';
+
+export interface TeamMember {
+  id: string;
+  owner_user_id: string;
+  member_email: string;
+  member_name?: string;
+  role: TeamMemberRole;
+  status: TeamMemberStatus;
+  invited_at: string;
+  joined_at?: string;
+  member_user_id?: string;
+}
+
+export type WorkspaceRole = 'owner' | TeamMemberRole;
+
+// ============================================================
 // Automations (migration 006)
 // ============================================================
 

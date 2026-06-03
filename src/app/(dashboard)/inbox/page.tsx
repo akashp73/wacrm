@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useAuth } from "@/hooks/use-auth";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 export default function InboxPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { ownerId } = useAuth();
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
    * dashboard's recent-conversations list so the right thread opens
@@ -39,28 +41,22 @@ export default function InboxPage() {
 
   // Check WhatsApp connection status on mount
   useEffect(() => {
+    if (!ownerId) return;
     const checkConnection = async () => {
       const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-
-      if (!user) return;
-
       // Table is `whatsapp_config` (singular) — the previous "whatsapp_configs"
       // query always returned no rows, so the banner always showed "not connected".
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
-        .eq("user_id", user.id)
+        .eq("user_id", ownerId)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
     };
 
     checkConnection();
-  }, []);
+  }, [ownerId]);
 
   // Handle realtime message events
   const handleMessageEvent = useCallback(

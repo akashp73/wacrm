@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus } from "@/types";
-import { Search, ChevronDown } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,7 +24,7 @@ interface ConversationListProps {
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-violet-500",
+  open: "bg-foreground",
   pending: "bg-amber-500",
   closed: "bg-slate-500",
 };
@@ -133,58 +133,70 @@ export function ConversationList({
   const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
 
   return (
-    // w-full on mobile so the list occupies the whole viewport when it's
-    // the single pane showing; fixed 320px on desktop where it shares the
-    // row with the thread + contact sidebar.
-    <div className="flex h-full w-full flex-col border-r border-slate-800 bg-slate-900 lg:w-80">
-      {/* Search + Filter */}
-      <div className="space-y-2 border-b border-slate-800 p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <Input
-            value={search}
-            onChange={handleSearchChange}
-            placeholder="Search conversations..."
-            className="border-slate-700 bg-slate-800 pl-9 text-sm text-white placeholder-slate-500 focus:border-violet-500/50"
-          />
-        </div>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-slate-400 hover:text-white rounded-md hover:bg-slate-800">
+    <div className="flex h-full w-full flex-col border-r border-border bg-white dark:border-border dark:bg-card lg:w-80">
+      {/* DoubleTick-style header row */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-3 dark:border-border">
+        <h2 className="text-[15px] font-semibold text-foreground dark:text-foreground">My Chats</h2>
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-muted-foreground hover:bg-muted dark:hover:bg-muted">
               {activeFilter?.label ?? "All"}
               <ChevronDown className="h-3 w-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="border-slate-700 bg-slate-800"
-          >
-            {FILTER_OPTIONS.map((opt) => (
-              <DropdownMenuItem
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="border-border dark:border-border">
+              {FILTER_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => setFilter(opt.value)}
                 className={cn(
                   "text-sm",
                   filter === opt.value
-                    ? "text-violet-400"
-                    : "text-slate-300"
+                    ? "text-foreground"
+                    : "text-foreground/70"
                 )}
               >
                 {opt.label}
               </DropdownMenuItem>
             ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <button
+            aria-label="Search"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted dark:hover:bg-muted"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Filter"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted dark:hover:bg-muted"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Search bar */}
+      <div className="border-b border-border px-3 py-2 dark:border-border">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={handleSearchChange}
+            placeholder="Search or start new chat"
+            className="rounded-lg border-border bg-muted pl-9 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-foreground dark:border-border dark:bg-muted dark:text-foreground"
+          />
+        </div>
       </div>
 
       {/* Conversation Items */}
       <ScrollArea className="flex-1">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-foreground border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm text-slate-500">No conversations found</p>
+            <p className="text-sm text-muted-foreground">No conversations found</p>
           </div>
         ) : (
           <div className="flex flex-col">
@@ -232,12 +244,14 @@ function ConversationItem({
     <button
       onClick={handleClick}
       className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-800/50",
-        isActive && "border-l-2 border-violet-500 bg-slate-800/70"
+        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
+        isActive
+          ? "border-l-[3px] border-l-foreground bg-muted dark:bg-muted"
+          : "border-l-[3px] border-l-transparent hover:bg-muted dark:hover:bg-muted/50",
       )}
     >
-      {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-medium text-white">
+      {/* Avatar — green circle with initial, DoubleTick style */}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-white">
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
@@ -252,29 +266,20 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-white">
+          <span className="truncate text-[13px] font-semibold text-foreground dark:text-foreground">
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] text-slate-500">{timeAgo}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground dark:text-muted-foreground">{timeAgo}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-slate-400">
+          <p className="truncate text-[12px] text-muted-foreground dark:text-muted-foreground">
             {conversation.last_message_text || "No messages yet"}
           </p>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.unread_count > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-500 px-1 text-[10px] font-bold text-white">
-                {conversation.unread_count}
-              </span>
-            )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
-            />
-          </div>
+          {conversation.unread_count > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1 text-[11px] font-semibold text-white">
+              {conversation.unread_count > 99 ? "99+" : conversation.unread_count}
+            </span>
+          )}
         </div>
       </div>
     </button>

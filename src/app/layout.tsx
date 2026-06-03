@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
+import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 import {
   OG_IMAGE_ALT,
@@ -78,10 +79,12 @@ export const metadata: Metadata = {
   },
 };
 
-// Dark theme color for the mobile browser chrome.
 export const viewport: Viewport = {
-  themeColor: "#020617",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#FAFAFA" },
+    { media: "(prefers-color-scheme: dark)", color: "#0D0D0D" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({
@@ -90,20 +93,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full bg-slate-950 text-white font-sans">
-        {children}
-        <Toaster
-          theme="dark"
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "rgb(30 41 59)",
-              border: "1px solid rgb(51 65 85)",
-              color: "white",
-            },
-          }}
-        />
+    <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
+      <body className="min-h-full bg-background text-foreground font-sans">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          storageKey="wacrm-ui-theme"
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster
+            theme="system"
+            position="top-right"
+            richColors
+          />
+        </ThemeProvider>
       </body>
     </html>
   );

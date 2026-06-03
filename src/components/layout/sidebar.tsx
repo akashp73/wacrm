@@ -1,264 +1,380 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import type { WorkspaceRole } from "@/types";
 import {
-  LayoutDashboard,
-  MessageSquare,
-  Users,
-  GitBranch,
-  Radio,
-  Zap,
-  Settings,
-  LogOut,
-  User,
-  X,
+  Home, MessageSquare, Users, Send, LayoutTemplate,
+  GitBranch, Zap, ListOrdered, Bot, Workflow,
+  BarChart2, Settings,
+  LayoutGrid, ChevronRight, LogOut, Plus, X,
 } from "lucide-react";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
+// ─── Types ───────────────────────────────────────────────────
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  minRole?: WorkspaceRole;
+  soon?: boolean;
+  badge?: number;
+};
+
+type NavSection = {
+  label: string;
+  items: NavItem[];
+};
+
+// ─── Nav structure ────────────────────────────────────────────
+
+const NAV: NavSection[] = [
+  {
+    label: "APPX",
+    items: [
+      { href: "/dashboard",  label: "Home",       icon: Home },
+      { href: "/contacts",   label: "Contacts",   icon: Users },
+      { href: "/templates",  label: "Templates",  icon: LayoutTemplate, minRole: "admin" },
+      { href: "/broadcasts", label: "Broadcasts", icon: Send,            minRole: "admin" },
+      { href: "/inbox",      label: "Inbox",      icon: MessageSquare },
+    ],
+  },
+  {
+    label: "AUTOMATION",
+    items: [
+      { href: "/pipelines",   label: "Pipelines",   icon: GitBranch,   minRole: "admin" },
+      { href: "/automations", label: "Automations", icon: Zap,         minRole: "admin" },
+      { href: "/chatbots",    label: "Chatbots",    icon: Workflow,    minRole: "admin" },
+      { href: "/drip",        label: "Drip",        icon: ListOrdered, minRole: "admin" },
+      { href: "/ai-agent",    label: "AI Agent",    icon: Bot,         minRole: "admin" },
+    ],
+  },
+  {
+    label: "CONFIGURE",
+    items: [
+      { href: "/reports",  label: "Reports",  icon: BarChart2, minRole: "admin" },
+      { href: "/settings", label: "Settings", icon: Settings,  minRole: "admin" },
+    ],
+  },
 ];
 
-const bottomNavItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+const ROLE_RANK: Record<WorkspaceRole, number> = { owner: 4, admin: 3, agent: 2, viewer: 1 };
+const hasAccess = (min: WorkspaceRole | undefined, role: WorkspaceRole) =>
+  !min || ROLE_RANK[role] >= ROLE_RANK[min];
+
+// ─── User Popover ─────────────────────────────────────────────
+
+function UserPopover({
+  profile,
+  onClose,
+  onSignOut,
+}: {
+  profile: { full_name: string | null; email: string } | null;
+  onClose: () => void;
+  onSignOut: () => void;
+}) {
+  const router = useRouter();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute bottom-full left-2 right-2 mb-1 z-50 rounded-xl border border-border bg-card shadow-lg py-1 text-sm"
+    >
+      {/* Identity */}
+      <div className="px-3 py-2 border-b border-border">
+        <p className="font-medium text-foreground truncate">{profile?.full_name ?? "User"}</p>
+        <p className="text-xs text-muted-foreground truncate">{profile?.email ?? ""}</p>
+      </div>
+
+      {[
+        { label: "Account settings", href: "/settings?tab=profile" },
+        { label: "All projects",     href: "#" },
+      ].map((item) => (
+        <button
+          key={item.label}
+          onClick={() => { router.push(item.href); onClose(); }}
+          className="w-full text-left px-3 py-2 hover:bg-muted transition-colors text-foreground"
+        >
+          {item.label}
+        </button>
+      ))}
+
+      {/* Billing row with SOON badge */}
+      <div className="flex items-center justify-between px-3 py-2 text-muted-foreground cursor-default">
+        <span>Billing</span>
+        <span className="text-[10px] bg-muted text-muted-foreground rounded-full px-1.5 py-px font-medium">SOON</span>
+      </div>
+
+      <div className="border-t border-border mt-1" />
+
+      <button
+        onClick={() => { onSignOut(); onClose(); }}
+        className="w-full text-left px-3 py-2 text-[#EF4444] hover:bg-muted transition-colors"
+      >
+        Log out
+      </button>
+    </div>
+  );
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────
 
 interface SidebarProps {
-  /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
   open?: boolean;
   onClose?: () => void;
 }
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, memberRole } = useAuth();
   const totalUnread = useTotalUnread();
 
-  // Close the drawer when route changes — users opened it to navigate,
-  // so once they pick a destination the drawer should get out of the way.
-  useEffect(() => {
-    onClose?.();
-    // Only pathname drives this — onClose identity doesn't need to re-run it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  // Collapse state — persisted in localStorage
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
 
-  // Lock body scroll and allow Escape to close while the drawer is open on
-  // mobile. No-ops on desktop because the sidebar isn't positioned there.
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  const toggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    if (typeof window !== "undefined") localStorage.setItem("sidebar-collapsed", String(next));
+  };
+
+  // Close drawer on route change (mobile)
+  useEffect(() => { onClose?.(); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Body scroll lock + ESC close on mobile
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", handler);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", handler); };
   }, [open, onClose]);
+
+  const initial = (profile?.full_name ?? profile?.email ?? "U").charAt(0).toUpperCase();
+  const w = collapsed ? "w-12" : "w-[180px]";
 
   return (
     <>
-      {/* Backdrop — only exists on mobile and only when open. Clicking
-          it closes the drawer. Hidden from lg+ since the sidebar is
-          part of the main flex row there. */}
+      {/* Mobile backdrop */}
       <button
         type="button"
         aria-label="Close menu"
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm transition-opacity lg:hidden",
-          open
-            ? "pointer-events-auto opacity-100"
-            : "pointer-events-none opacity-0",
+          "fixed inset-0 z-30 bg-black/30 backdrop-blur-sm transition-opacity lg:hidden",
+          open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
         )}
       />
 
       <aside
         className={cn(
-          // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-slate-800 bg-slate-900",
-          "transition-transform duration-200 ease-out will-change-transform",
+          "fixed inset-y-0 left-0 z-40 flex flex-col bg-sidebar-bg border-r border-border",
+          "transition-all duration-200 ease-out",
+          w,
           open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: static, always visible — reset all the mobile framing.
-          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          "lg:static lg:z-0 lg:translate-x-0",
         )}
-        aria-label="Primary"
+        aria-label="Primary navigation"
       >
-        {/* Logo row. On mobile we put a close button here; on desktop the
-            close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500">
-              <MessageSquare className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-sm font-semibold text-white">
-              CRM Template for WhatsApp
-            </span>
-          </Link>
+        {/* ── Header row ── */}
+        <div className={cn(
+          "flex h-11 shrink-0 items-center border-b border-border px-3",
+          collapsed ? "justify-center" : "justify-between",
+        )}>
+          {/* Logo — always visible; click expands when collapsed */}
           <button
+            onClick={collapsed ? toggleCollapse : undefined}
+            className={cn(
+              "flex items-center gap-2 min-w-0",
+              collapsed ? "cursor-pointer" : "cursor-default",
+            )}
+            aria-label={collapsed ? "Expand sidebar" : undefined}
             type="button"
-            onClick={onClose}
-            aria-label="Close menu"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
           >
-            <X className="h-5 w-5" />
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground">
+              <MessageSquare className="h-3.5 w-3.5 text-background" />
+            </div>
+            {!collapsed && (
+              <span className="text-[14px] font-bold text-foreground truncate">WACRM</span>
+            )}
           </button>
+
+          {/* Collapse toggle — only shown when expanded */}
+          {!collapsed && (
+            <button
+              onClick={toggleCollapse}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="Collapse sidebar"
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        {/* Main navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/dashboard" && pathname.startsWith(item.href));
+        {/* ── Nav ── */}
+        <nav className="flex-1 overflow-y-auto py-2 scrollbar-none">
+          {NAV.map((section) => {
+            const visibleItems = section.items.filter(
+              (item) => hasAccess(item.minRole, memberRole),
+            );
+            if (visibleItems.length === 0) return null;
 
-              const showUnreadDot =
-                item.href === "/inbox" && totalUnread > 0 && !isActive;
+            return (
+              <div key={section.label} className="mb-3">
+                {!collapsed && (
+                  <p className="mx-3 mb-1 text-[11px] font-medium uppercase tracking-widest text-sidebar-label">
+                    {section.label}
+                  </p>
+                )}
+                <ul className="space-y-px">
+                  {visibleItems.map((item) => {
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                    const unread = item.href === "/inbox" ? totalUnread : 0;
 
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
-                      isActive
-                        ? "bg-violet-500/10 text-violet-500"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white",
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span className="flex-1">{item.label}</span>
-                    {showUnreadDot && (
-                      <span
-                        aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
-                        className="relative flex h-2 w-2"
-                      >
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-
-          <div className="my-4 border-t border-slate-800" />
-
-          <ul className="flex flex-col gap-1">
-            {bottomNavItems.map((item) => {
-              const isActive = pathname.startsWith(item.href);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
-                      isActive
-                        ? "bg-violet-500/10 text-violet-500"
-                        : "text-slate-400 hover:bg-slate-800 hover:text-white",
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+                    return (
+                      <li key={item.href}>
+                        {item.soon ? (
+                          <div
+                            className={cn(
+                              "flex items-center gap-2.5 rounded-md mx-2 px-2.5 py-2 cursor-default",
+                              "text-muted-foreground",
+                              collapsed && "justify-center px-0 mx-0 rounded-none",
+                            )}
+                            title={collapsed ? item.label : undefined}
+                          >
+                            <item.icon className={cn("h-4 w-4 shrink-0", collapsed ? "h-[18px] w-[18px]" : "")} />
+                            {!collapsed && (
+                              <>
+                                <span className="flex-1 text-[13px] truncate">{item.label}</span>
+                                <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                                  SOON
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <Link
+                            href={item.href}
+                            className={cn(
+                              "flex items-center gap-2.5 rounded-md mx-2 px-2.5 py-2 transition-colors",
+                              "text-[13px] font-normal text-sidebar-text",
+                              isActive
+                                ? "bg-sidebar-active font-medium border-l-2 border-foreground rounded-l-none"
+                                : "hover:bg-sidebar-hover",
+                              collapsed && "justify-center px-0 mx-0 rounded-none border-l-0",
+                            )}
+                            title={collapsed ? item.label : undefined}
+                          >
+                            <item.icon className={cn("h-4 w-4 shrink-0", collapsed ? "h-[18px] w-[18px]" : "")} />
+                            {!collapsed && (
+                              <>
+                                <span className="flex-1 truncate">{item.label}</span>
+                                {unread > 0 && (
+                                  <span className="shrink-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-semibold text-background">
+                                    {unread > 99 ? "99+" : unread}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
 
-        {/* User section */}
-        <div className="shrink-0 border-t border-slate-800 p-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-slate-800/60 focus:bg-slate-800/60 focus:outline-none data-popup-open:bg-slate-800/60">
-              <Avatar className="size-8 shrink-0">
-                {profile?.avatar_url ? (
-                  <AvatarImage
-                    src={profile.avatar_url}
-                    alt={profile.full_name ?? "Avatar"}
-                  />
-                ) : null}
-                <AvatarFallback className="bg-violet-500/10 text-sm font-medium text-violet-500">
-                  {profile?.full_name?.charAt(0)?.toUpperCase() ??
-                    profile?.email?.charAt(0)?.toUpperCase() ??
-                    "U"}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {profile?.full_name ?? "User"}
+        {/* ── Credits widget ── */}
+        {!collapsed && (
+          <div className="shrink-0 mx-2 mb-2 rounded-lg bg-muted px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Credits left
                 </p>
-                <p className="truncate text-xs text-slate-400">
-                  {profile?.email ?? ""}
-                </p>
+                <p className="text-sm font-semibold text-foreground mt-0.5">₹0.00</p>
               </div>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              side="top"
-              sideOffset={6}
-              className="min-w-56 bg-slate-900 text-slate-100 ring-slate-700"
+              <Link
+                href="/settings?tab=whatsapp"
+                className="flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-background hover:opacity-80 transition-opacity"
+                aria-label="Add credits"
+                title="Add credits"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* ── User row + expand button (collapsed) ── */}
+        <div className={cn("shrink-0 border-t border-border", collapsed ? "p-0" : "px-0 pb-0")}>
+          {collapsed ? (
+            <button
+              onClick={toggleCollapse}
+              className="flex w-full h-10 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="Expand sidebar"
             >
-              <DropdownMenuItem
-                render={
-                  <Link
-                    href="/settings?tab=profile"
-                    onClick={onClose}
-                    className="text-slate-200 focus:bg-slate-800 focus:text-white"
-                  />
-                }
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          ) : (
+            <div className="relative">
+              {popoverOpen && (
+                <UserPopover
+                  profile={profile}
+                  onClose={() => setPopoverOpen(false)}
+                  onSignOut={signOut}
+                />
+              )}
+              <button
+                onClick={() => setPopoverOpen((v) => !v)}
+                className="flex w-full items-center gap-2.5 px-3 py-2.5 hover:bg-muted transition-colors"
               >
-                <User className="size-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                render={
-                  <Link
-                    href="/settings?tab=whatsapp"
-                    onClick={onClose}
-                    className="text-slate-200 focus:bg-slate-800 focus:text-white"
-                  />
-                }
-              >
-                <Settings className="size-4" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-slate-800" />
-              <DropdownMenuItem
-                onClick={signOut}
-                className="text-slate-200 focus:bg-slate-800 focus:text-white"
-              >
-                <LogOut className="size-4" />
-                Sign out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-[12px] font-semibold text-background">
+                  {initial}
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[12px] font-medium text-foreground truncate leading-tight">
+                      {profile?.full_name ?? "User"}
+                    </p>
+                    {memberRole !== 'owner' && (
+                      <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {memberRole}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate leading-tight">
+                    {profile?.email ?? ""}
+                  </p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
     </>

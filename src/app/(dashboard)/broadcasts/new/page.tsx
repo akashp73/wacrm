@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/use-auth';
 import { MessageTemplate } from '@/types';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
@@ -21,6 +22,7 @@ const steps = [
 
 export default function NewBroadcastPage() {
   const router = useRouter();
+  const { ownerId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
@@ -81,18 +83,14 @@ export default function NewBroadcastPage() {
       toast.error('Give the broadcast a name before saving a draft.');
       return;
     }
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) {
+    if (!ownerId) {
       toast.error('Not signed in.');
       return;
     }
+    const supabase = createClient();
 
     const { error } = await supabase.from('broadcasts').insert({
-      user_id: user.id,
+      user_id: ownerId,
       name: name.trim(),
       template_name: template.name,
       template_language: template.language ?? 'en_US',
@@ -122,8 +120,8 @@ export default function NewBroadcastPage() {
     <div className="mx-auto max-w-3xl space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">New Broadcast</h1>
-        <p className="mt-1 text-sm text-slate-400">
+        <h1 className="text-2xl font-bold text-foreground">New Broadcast</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Create and send a broadcast message to your contacts.
         </p>
       </div>
@@ -140,17 +138,17 @@ export default function NewBroadcastPage() {
                 <div
                   className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition-all ${
                     isCompleted
-                      ? 'bg-violet-500 text-white'
+                      ? 'bg-foreground text-background'
                       : isActive
-                        ? 'border-2 border-violet-500 bg-violet-500/10 text-violet-400'
-                        : 'border border-slate-700 bg-slate-800 text-slate-500'
+                        ? 'border-2 border-foreground bg-foreground/10 text-foreground'
+                        : 'border border-border bg-muted text-muted-foreground'
                   }`}
                 >
                   {isCompleted ? <Check className="h-4 w-4" /> : index + 1}
                 </div>
                 <span
                   className={`hidden text-sm font-medium sm:block ${
-                    isActive ? 'text-white' : isCompleted ? 'text-violet-400' : 'text-slate-500'
+                    isActive ? 'text-foreground' : isCompleted ? 'text-foreground' : 'text-muted-foreground'
                   }`}
                 >
                   {step.label}
@@ -159,7 +157,7 @@ export default function NewBroadcastPage() {
               {index < steps.length - 1 && (
                 <div
                   className={`mx-3 h-px flex-1 ${
-                    index < currentStep ? 'bg-violet-500' : 'bg-slate-800'
+                    index < currentStep ? 'bg-foreground' : 'bg-muted'
                   }`}
                 />
               )}

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import type { WorkspaceRole } from "@/types";
 
 interface Profile {
   id: string;
@@ -28,6 +29,15 @@ interface AuthContextValue {
    *  the settings form so header/sidebar reflect the change without a
    *  full page reload. */
   refreshProfile: () => Promise<void>;
+  /**
+   * The user_id that owns the workspace this user operates in.
+   * Equals user.id for workspace owners; equals the inviting owner's
+   * user_id for team members. Use this for all workspace-scoped DB
+   * queries instead of user.id.
+   */
+  ownerId: string | null;
+  /** Role of the current user in the workspace. */
+  memberRole: WorkspaceRole;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,6 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [memberRole, setMemberRole] = useState<WorkspaceRole>('owner');
 
   // Shared across init, auth-state-change listener, and the exposed
   // refreshProfile() callback. Reads the current session's user id and
@@ -67,6 +79,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data) setProfile(data);
     } catch (err) {
       console.error("[AuthProvider] fetchProfile threw:", err);
+    }
+  }, []);
+
+  /**
+   * Resolve workspace ownership for the current user.
+   * - If the user has a profiles row they are an owner (ownerId = userId).
+   * - Otherwise look up team_members by email. If a pending invite is
+   *   found, auto-accept it and link the member_user_id. Then set the
+   *   ownerId to the inviting owner's user_id.
+   */
+  const resolveWorkspace = useCallback(async (userId: string, email: string) => {
+    const supabase = createClient();
+    try {
+      // First check if this user is a workspace owner (has a profile).
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (profileRow) {
+        // They are an owner — workspace is their own.
+        setOwnerId(userId);
+        setMemberRole('owner');
+        return;
+      }
+
+      // Check for active membership.
+      const { data: activeMembership } = await supabase
+        .from("team_members")
+        .select("owner_user_id, role")
+        .eq("member_user_id", userId)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (activeMembership) {
+        setOwnerId(activeMembership.owner_user_id);
+        setMemberRole(activeMembership.role as WorkspaceRole);
+        return;
+      }
+
+      // Check for pending invite by email and auto-accept.
+      const { data: pendingInvite } = await supabase
+        .from("team_members")
+        .select("id, owner_user_id, role")
+        .eq("member_email", email)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (pendingInvite) {
+        await supabase
+          .from("team_members")
+          .update({
+            status: "active",
+            member_user_id: userId,
+            joined_at: new Date().toISOString(),
+          })
+          .eq("id", pendingInvite.id);
+
+        setOwnerId(pendingInvite.owner_user_id);
+        setMemberRole(pendingInvite.role as WorkspaceRole);
+        return;
+      }
+
+      // Fallback — treat as owner (handles edge cases / first-time signup).
+      setOwnerId(userId);
+      setMemberRole('owner');
+    } catch (err) {
+      console.error("[AuthProvider] resolveWorkspace threw:", err);
+      setOwnerId(userId);
+      setMemberRole('owner');
     }
   }, []);
 
@@ -98,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Don't block loading on profile fetch — let the UI render
           // with the user info we already have, profile enriches async.
           fetchProfile(currentUser.id);
+          resolveWorkspace(currentUser.id, currentUser.email ?? "");
         }
       } catch (err) {
         console.error("[AuthProvider] init threw:", err);
@@ -118,8 +202,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (currentUser) {
         fetchProfile(currentUser.id);
+        resolveWorkspace(currentUser.id, currentUser.email ?? "");
       } else {
         setProfile(null);
+        setOwnerId(null);
+        setMemberRole('owner');
       }
 
       setLoading(false);
@@ -147,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, loading, signOut, refreshProfile }}
+      value={{ user, profile, loading, signOut, refreshProfile, ownerId, memberRole }}
     >
       {children}
     </AuthContext.Provider>
@@ -167,6 +254,8 @@ export function useAuth(): AuthContextValue {
       user: null,
       profile: null,
       loading: false,
+      ownerId: null,
+      memberRole: 'owner' as WorkspaceRole,
       signOut: async () => {
         window.location.href = "/login";
       },

@@ -1,227 +1,171 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
+import Link from "next/link";
 import {
-  MessageSquare,
-  UserPlus,
-  DollarSign,
-  Send,
-} from 'lucide-react'
+  MessageSquare, Users, Send, LayoutTemplate,
+  ArrowUpRight, Lock, CheckCircle2, Circle, Wallet,
+} from "lucide-react";
 
-import {
-  loadActivity,
-  loadConversationsSeries,
-  loadMetrics,
-  loadPipelineDonut,
-  loadResponseTime,
-} from '@/lib/dashboard/queries'
-import type {
-  ActivityItem,
-  ConversationsSeriesPoint,
-  MetricsBundle,
-  PipelineDonutData,
-  ResponseTimeSummary,
-} from '@/lib/dashboard/types'
+// ─── Stat card ───────────────────────────────────────────────
 
-import { MetricCard } from '@/components/dashboard/metric-card'
-import { SkeletonCard } from '@/components/dashboard/skeleton'
-import { QuickActions } from '@/components/dashboard/quick-actions'
-import { ConversationsChart } from '@/components/dashboard/conversations-chart'
-import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
-import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
-import { ActivityFeed } from '@/components/dashboard/activity-feed'
+interface StatItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  count: number;
+  sub: string;
+}
 
-type RangeDays = 7 | 30 | 90
+function StatCard({ item }: { item: StatItem }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 text-[13px] text-muted-foreground font-medium">
+          <item.icon className="h-4 w-4" />
+          <span>{item.label}</span>
+        </div>
+        <Link href={item.href} className="text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowUpRight className="h-4 w-4" />
+        </Link>
+      </div>
+      <p className="text-3xl font-bold text-foreground tabular-nums">{item.count}</p>
+      <p className="text-[12px] text-muted-foreground mt-1">{item.sub}</p>
+    </div>
+  );
+}
 
-export default function DashboardPage() {
-  const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+// ─── Setup card ──────────────────────────────────────────────
 
-  const [range, setRange] = useState<RangeDays>(30)
-  // Keep a cache per range so switching tabs doesn't re-fetch what we
-  // already have. Ranges the user hasn't opened yet stay null and
-  // trigger a fetch on first view.
-  const [series, setSeries] = useState<Record<RangeDays, ConversationsSeriesPoint[] | null>>({
-    7: null,
-    30: null,
-    90: null,
-  })
-  const [seriesLoading, setSeriesLoading] = useState(true)
+const SETUP_STEPS = [
+  { label: "Apply for WhatsApp Business API" },
+  { label: "Complete KYC verification" },
+  { label: "Customize your profile" },
+  { label: "Send your first message" },
+];
 
-  const [pipeline, setPipeline] = useState<PipelineDonutData | null>(null)
-  const [pipelineLoading, setPipelineLoading] = useState(true)
-
-  const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
-  const [responseTimeLoading, setResponseTimeLoading] = useState(true)
-
-  const [activity, setActivity] = useState<ActivityItem[] | null>(null)
-  const [activityLoading, setActivityLoading] = useState(true)
-
-  const loadAll = useCallback(() => {
-    const db = createClient()
-
-    // Kick everything off in parallel. Each block has its own
-    // setState + finally so a slow query doesn't hold up faster
-    // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
-      .then((m) => setMetrics(m))
-      .catch((err) => console.error('[dashboard] metrics failed:', err))
-      .finally(() => setMetricsLoading(false))
-
-    void loadConversationsSeries(db, 30)
-      .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
-      .catch((err) => console.error('[dashboard] series failed:', err))
-      .finally(() => setSeriesLoading(false))
-
-    void loadPipelineDonut(db)
-      .then((p) => setPipeline(p))
-      .catch((err) => console.error('[dashboard] pipeline failed:', err))
-      .finally(() => setPipelineLoading(false))
-
-    void loadResponseTime(db)
-      .then((r) => setResponseTime(r))
-      .catch((err) => console.error('[dashboard] response time failed:', err))
-      .finally(() => setResponseTimeLoading(false))
-
-    // Fetch up to 50 so the biggest page-size option in the feed
-    // (50 rows) is already in memory — switching sizes then becomes
-    // a pure client-side slice with no extra round trip.
-    void loadActivity(db, 50)
-      .then((a) => setActivity(a))
-      .catch((err) => console.error('[dashboard] activity failed:', err))
-      .finally(() => setActivityLoading(false))
-  }, [])
-
-  useEffect(() => {
-    loadAll()
-  }, [loadAll])
-
-  // Range switch handler — kept in an event callback (not an effect)
-  // so the setState calls stay out of the react-hooks/set-state-in-effect
-  // rule's way. The cached bucket check means switching back to a
-  // previously-viewed range is instant and doesn't re-fetch.
-  const handleRangeChange = useCallback(
-    (r: RangeDays) => {
-      setRange(r)
-      if (series[r] !== null) return
-      setSeriesLoading(true)
-      const db = createClient()
-      loadConversationsSeries(db, r)
-        .then((s) => setSeries((prev) => ({ ...prev, [r]: s })))
-        .catch((err) => console.error('[dashboard] series failed:', err))
-        .finally(() => setSeriesLoading(false))
-    },
-    [series],
-  )
+function SetupCard() {
+  const done = 0;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Live analytics across conversations, contacts, deals, broadcasts, and automations.
-        </p>
-      </div>
-
-      {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            <MetricCard
-              title="Active Conversations"
-              value={metrics.activeConversations.current.toLocaleString()}
-              icon={MessageSquare}
-              delta={{
-                sign: metrics.activeConversations.previous,
-                label: deltaLabel(metrics.activeConversations.previous, 'new today vs yesterday'),
-              }}
-            />
-            <MetricCard
-              title="New Contacts Today"
-              value={metrics.newContactsToday.current.toLocaleString()}
-              icon={UserPlus}
-              delta={{
-                sign:
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                label: deltaLabel(
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                  'vs yesterday',
-                ),
-              }}
-            />
-            <MetricCard
-              title="Open Deals Value"
-              value={formatCurrency(metrics.openDealsValue)}
-              icon={DollarSign}
-              subtitle={`${metrics.openDealsCount} open deal${metrics.openDealsCount === 1 ? '' : 's'}`}
-            />
-            <MetricCard
-              title="Messages Sent Today"
-              value={metrics.messagesSentToday.current.toLocaleString()}
-              icon={Send}
-              delta={{
-                sign:
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                label: deltaLabel(
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                  'vs yesterday',
-                ),
-              }}
-            />
-          </>
-        )}
-      </div>
-
-      {/* Quick actions */}
-      <QuickActions />
-
-      {/* Charts row */}
-      {/* items-stretch (the grid default) stretches the two columns to
-          match the tallest sibling; adding h-full on each wrapper and
-          on the inner panels makes both cards actually fill that
-          stretched height so their rounded borders line up. Without
-          this, the pipeline card rendered at its natural (shorter)
-          height while the line chart drove the row height. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="h-full lg:col-span-3">
-          <ConversationsChart
-            series={series}
-            loading={seriesLoading}
-            range={range}
-            onRangeChange={handleRangeChange}
-          />
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="p-5 border-b border-border">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[13px] font-semibold text-foreground">
+            Setup WhatsApp Business Account
+          </p>
+          <span className="text-[12px] text-muted-foreground font-medium">
+            {done} of {SETUP_STEPS.length}
+          </span>
         </div>
-        <div className="h-full lg:col-span-2">
-          <PipelineDonut data={pipeline} loading={pipelineLoading} />
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full bg-foreground transition-all" style={{ width: "0%" }} />
         </div>
       </div>
-
-      {/* Response time */}
-      <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
-
-      {/* Activity feed */}
-      <ActivityFeed items={activity} loading={activityLoading} />
+      <div className="divide-y divide-border">
+        {SETUP_STEPS.map((step, i) => (
+          <div key={i} className="flex items-center gap-3 px-5 py-3.5">
+            <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 text-[13px] text-foreground">{step.label}</span>
+            <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </div>
+        ))}
+      </div>
     </div>
-  )
+  );
 }
 
-// ------------------------------------------------------------
+// ─── Wallet card ──────────────────────────────────────────────
 
-function formatCurrency(v: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(v)
+function WalletCard() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Wallet className="h-4 w-4 text-muted-foreground" />
+          <span className="text-[13px] font-semibold text-foreground">Wallet</span>
+        </div>
+        <button className="text-[12px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-0.5">
+          Manage <ArrowUpRight className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="space-y-2">
+        {[
+          { label: "CREDITS AVAILABLE", value: "₹0.00", desc: "Top up to send messages" },
+          { label: "PLAN",              value: "Free",  desc: "Upgrade to unlock higher volumes" },
+          { label: "CREDITS USED",      value: "₹0.00", desc: "This billing period" },
+        ].map((row) => (
+          <div key={row.label} className="rounded-lg bg-muted/50 px-4 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-0.5">
+              {row.label}
+            </p>
+            <p className="text-[15px] font-bold text-foreground">{row.value}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{row.desc}</p>
+          </div>
+        ))}
+      </div>
+      <button className="w-full rounded-lg border border-border bg-card px-4 py-2 text-[13px] font-medium text-foreground hover:bg-muted transition-colors">
+        View plans
+      </button>
+    </div>
+  );
 }
 
-function deltaLabel(delta: number, suffix: string): string {
-  if (delta === 0) return `No change ${suffix}`
-  const sign = delta > 0 ? '+' : ''
-  return `${sign}${delta.toLocaleString()} ${suffix}`
+// ─── Page ─────────────────────────────────────────────────────
+
+export default function DashboardPage() {
+  const supabase = createClient();
+  const { ownerId } = useAuth();
+  const [counts, setCounts] = useState({ inbox: 0, broadcasts: 0, contacts: 0, templates: 0 });
+
+  useEffect(() => {
+    if (!ownerId) return;
+    (async () => {
+      const [conv, bcast, contacts, tmpl] = await Promise.all([
+        supabase.from("conversations").select("id", { count: "exact", head: true }).eq("user_id", ownerId),
+        supabase.from("broadcasts").select("id", { count: "exact", head: true }).eq("user_id", ownerId),
+        supabase.from("contacts").select("id", { count: "exact", head: true }).eq("user_id", ownerId),
+        supabase.from("message_templates").select("id", { count: "exact", head: true }).eq("user_id", ownerId),
+      ]);
+      setCounts({ inbox: conv.count ?? 0, broadcasts: bcast.count ?? 0, contacts: contacts.count ?? 0, templates: tmpl.count ?? 0 });
+    })();
+  }, [ownerId]);
+
+  const stats: StatItem[] = [
+    { label: "Inbox",      href: "/inbox",                   icon: MessageSquare, count: counts.inbox,      sub: "Total conversations" },
+    { label: "Broadcasts", href: "/broadcasts",              icon: Send,          count: counts.broadcasts, sub: "Campaigns created" },
+    { label: "Contacts",   href: "/contacts",                icon: Users,         count: counts.contacts,   sub: "People in audience" },
+    { label: "Templates",  href: "/settings?tab=templates",  icon: LayoutTemplate,count: counts.templates,  sub: "Message templates" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-[28px] font-bold text-foreground leading-tight">Home</h1>
+        <p className="text-[14px] text-muted-foreground mt-1">Your workspace at a glance.</p>
+      </div>
+
+      <div className="flex gap-6 items-start">
+        {/* Left */}
+        <div className="flex-1 min-w-0 space-y-6">
+          <SetupCard />
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-3">
+              ACROSS YOUR WORKSPACE
+            </p>
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+              {stats.map((s) => <StatCard key={s.label} item={s} />)}
+            </div>
+          </div>
+        </div>
+
+        {/* Right — wallet */}
+        <div className="w-[280px] shrink-0 hidden lg:block">
+          <WalletCard />
+        </div>
+      </div>
+    </div>
+  );
 }

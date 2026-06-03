@@ -1,139 +1,85 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Home, Search } from "lucide-react";
+import Link from "next/link";
+import { useState, useEffect } from "react";
 
-const pageTitles: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/inbox": "Inbox",
-  "/contacts": "Contacts",
-  "/pipelines": "Pipelines",
-  "/broadcasts": "Broadcasts",
+const PAGE_LABELS: Record<string, string> = {
+  "/dashboard":   "Home",
+  "/contacts":    "Contacts",
+  "/templates":   "Templates",
+  "/broadcasts":  "Broadcasts",
+  "/inbox":       "Inbox",
+  "/pipelines":   "Pipelines",
   "/automations": "Automations",
-  "/settings": "Settings",
+  "/chatbots":    "Chatbots",
+  "/drip":        "Drip",
+  "/ai-agent":    "AI Agent",
+  "/reports":     "Reports",
+  "/settings":    "Settings",
 };
 
-function getPageTitle(pathname: string): string {
-  if (pageTitles[pathname]) return pageTitles[pathname];
-  const match = Object.entries(pageTitles).find(([path]) =>
-    pathname.startsWith(path),
-  );
-  return match ? match[1] : "Dashboard";
+function getPageLabel(pathname: string): string {
+  if (PAGE_LABELS[pathname]) return PAGE_LABELS[pathname];
+  const match = Object.entries(PAGE_LABELS).find(([p]) => pathname.startsWith(p));
+  return match ? match[1] : "Home";
 }
 
 interface HeaderProps {
-  /** Wired to the shell's drawer state. Used only on mobile — the
-   *  hamburger button is hidden on lg+. */
   onOpenSidebar?: () => void;
+  onOpenSearch?: () => void;
 }
 
-export function Header({ onOpenSidebar }: HeaderProps) {
+export function Header({ onOpenSidebar, onOpenSearch }: HeaderProps) {
   const pathname = usePathname();
-  const { profile, signOut } = useAuth();
-  const title = getPageTitle(pathname);
+  const label = getPageLabel(pathname);
 
-  const initial =
-    profile?.full_name?.charAt(0)?.toUpperCase() ??
-    profile?.email?.charAt(0)?.toUpperCase() ??
-    "U";
+  // ⌘K shortcut wires up to the palette via the onOpenSearch callback
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        onOpenSearch?.();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onOpenSearch]);
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-950 px-4 lg:px-6">
-      <div className="flex min-w-0 items-center gap-2">
-        {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
+    <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 lg:px-5">
+      {/* Left: breadcrumb */}
+      <div className="flex items-center gap-1.5 text-[13px] min-w-0">
+        {/* Mobile hamburger */}
         <button
           type="button"
           onClick={onOpenSidebar}
           aria-label="Open menu"
-          className="flex h-10 w-10 items-center justify-center rounded-md text-slate-300 transition-colors hover:bg-slate-800 hover:text-white lg:hidden"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors mr-1 lg:hidden"
         >
-          <Menu className="h-5 w-5" />
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
         </button>
-        <h1 className="truncate text-base font-semibold text-white sm:text-lg">
-          {title}
-        </h1>
+
+        <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors flex items-center">
+          <Home className="h-3.5 w-3.5" />
+        </Link>
+        <span className="text-muted-foreground">/</span>
+        <span className="font-medium text-foreground truncate">{label}</span>
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          className="flex items-center gap-2 rounded-md px-1 py-1 transition-colors hover:bg-slate-800/70 focus:bg-slate-800/70 focus:outline-none data-popup-open:bg-slate-800/70 sm:gap-3 sm:pl-1 sm:pr-3"
-          aria-label="Open account menu"
-        >
-          <Avatar className="size-8">
-            {profile?.avatar_url ? (
-              <AvatarImage
-                src={profile.avatar_url}
-                alt={profile.full_name ?? "Avatar"}
-              />
-            ) : null}
-            <AvatarFallback className="bg-violet-500/10 text-sm font-medium text-violet-500">
-              {initial}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden text-sm font-medium text-white sm:inline">
-            {profile?.full_name ?? "User"}
-          </span>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          sideOffset={6}
-          className="min-w-56 bg-slate-900 text-slate-100 ring-slate-700"
-        >
-          <div className="px-2 py-1.5">
-            <p className="truncate text-sm font-medium text-white">
-              {profile?.full_name ?? "User"}
-            </p>
-            <p className="truncate text-xs text-slate-400">
-              {profile?.email ?? ""}
-            </p>
-          </div>
-          <DropdownMenuSeparator className="bg-slate-800" />
-          <DropdownMenuItem
-            render={
-              <Link
-                href="/settings?tab=profile"
-                className="text-slate-200 focus:bg-slate-800 focus:text-white"
-              />
-            }
-          >
-            <User className="size-4" />
-            Profile
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            render={
-              <Link
-                href="/settings?tab=whatsapp"
-                className="text-slate-200 focus:bg-slate-800 focus:text-white"
-              />
-            }
-          >
-            <SettingsIcon className="size-4" />
-            Settings
-          </DropdownMenuItem>
-          <DropdownMenuSeparator className="bg-slate-800" />
-          <DropdownMenuItem
-            onClick={signOut}
-            className="text-slate-200 focus:bg-slate-800 focus:text-white"
-          >
-            <LogOut className="size-4" />
-            Sign out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Right: search bar */}
+      <button
+        onClick={onOpenSearch}
+        className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-[13px] text-muted-foreground hover:bg-accent transition-colors min-w-0 max-w-[200px] w-full"
+        aria-label="Open search (⌘K)"
+      >
+        <Search className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1 text-left truncate">Search...</span>
+        <span className="shrink-0 text-[11px] font-medium text-muted-foreground hidden sm:inline">⌘K</span>
+      </button>
     </header>
   );
 }

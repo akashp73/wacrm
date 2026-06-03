@@ -46,41 +46,126 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* AIDM design token utilities */
+  --color-sidebar-bg:     var(--s-bg);
+  --color-sidebar-hover:  var(--s-hover);
+  --color-sidebar-active: var(--s-active);
+  --color-sidebar-label:  var(--s-label);
+  --color-sidebar-text:   var(--s-text);
+  --color-sidebar-muted:  var(--s-muted);
+  --color-content-bg:     var(--c-bg);
+  --color-content-card:   var(--c-card);
+  --color-content-border: var(--c-border);
+
+  /* WhatsApp brand (content-only: logos, bubble colours) */
+  --color-wa-green:        #25D366;
+  --color-wa-green-dark:   #128C7E;
+  --color-wa-bubble-out:   var(--bubble-out);
+  --color-wa-bubble-in:    var(--bubble-in);
 }
 
+/* ============================================================
+   AIDM Light — black & white minimal
+   ============================================================ */
 :root {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.526 0.247 293);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
-  --ring: oklch(0.526 0.247 293);
-  --chart-1: oklch(0.526 0.247 293);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.526 0.247 293);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
-  --sidebar-ring: oklch(0.526 0.247 293);
+  /* Layout tokens */
+  --s-bg:     #FFFFFF;
+  --s-hover:  #F5F5F5;
+  --s-active: #F0F0F0;
+  --s-label:  #9CA3AF;
+  --s-text:   #111111;
+  --s-muted:  #6B7280;
+  --c-bg:     #FAFAFA;
+  --c-card:   #FFFFFF;
+  --c-border: #E5E7EB;
+
+  /* Semantic tokens */
+  --background:           #FAFAFA;
+  --foreground:           #111111;
+  --card:                 #FFFFFF;
+  --card-foreground:      #111111;
+  --popover:              #FFFFFF;
+  --popover-foreground:   #111111;
+  --primary:              #111111;
+  --primary-foreground:   #FFFFFF;
+  --secondary:            #F5F5F5;
+  --secondary-foreground: #111111;
+  --muted:                #F5F5F5;
+  --muted-foreground:     #6B7280;
+  --accent:               #F0F0F0;
+  --accent-foreground:    #111111;
+  --destructive:          #EF4444;
+  --border:               #E5E7EB;
+  --input:                #FFFFFF;
+  --ring:                 #111111;
+  --chart-1:              #111111;
+  --chart-2:              #6B7280;
+  --chart-3:              #9CA3AF;
+  --chart-4:              #D1D5DB;
+  --chart-5:              #F3F4F6;
+  --radius:               0.5rem;
+  --sidebar:              #FFFFFF;
+  --sidebar-foreground:   #111111;
+  --sidebar-primary:      #111111;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:       #F0F0F0;
+  --sidebar-accent-foreground: #111111;
+  --sidebar-border:       #E5E7EB;
+  --sidebar-ring:         #111111;
+
+  /* Message bubbles (WhatsApp chat view) */
+  --bubble-out: #DCF8C6;
+  --bubble-in:  #FFFFFF;
+}
+
+/* ============================================================
+   AIDM Dark
+   ============================================================ */
+.dark {
+  --s-bg:     #0A0A0A;
+  --s-hover:  #1A1A1A;
+  --s-active: #222222;
+  --s-label:  #4B5563;
+  --s-text:   #F5F5F5;
+  --s-muted:  #9CA3AF;
+  --c-bg:     #0D0D0D;
+  --c-card:   #111111;
+  --c-border: #222222;
+
+  --background:           #0D0D0D;
+  --foreground:           #F5F5F5;
+  --card:                 #111111;
+  --card-foreground:      #F5F5F5;
+  --popover:              #111111;
+  --popover-foreground:   #F5F5F5;
+  --primary:              #F5F5F5;
+  --primary-foreground:   #111111;
+  --secondary:            #1A1A1A;
+  --secondary-foreground: #F5F5F5;
+  --muted:                #1A1A1A;
+  --muted-foreground:     #9CA3AF;
+  --accent:               #222222;
+  --accent-foreground:    #F5F5F5;
+  --destructive:          #EF4444;
+  --border:               #222222;
+  --input:                #1A1A1A;
+  --ring:                 #F5F5F5;
+  --chart-1:              #F5F5F5;
+  --chart-2:              #9CA3AF;
+  --chart-3:              #6B7280;
+  --chart-4:              #374151;
+  --chart-5:              #1F2937;
+  --sidebar:              #0A0A0A;
+  --sidebar-foreground:   #F5F5F5;
+  --sidebar-primary:      #F5F5F5;
+  --sidebar-primary-foreground: #111111;
+  --sidebar-accent:       #222222;
+  --sidebar-accent-foreground: #F5F5F5;
+  --sidebar-border:       #222222;
+  --sidebar-ring:         #F5F5F5;
+  --bubble-out:           #1A3A2A;
+  --bubble-in:            #1A1A1A;
 }
 
 @layer base {

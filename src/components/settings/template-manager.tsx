@@ -2,470 +2,209 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, Pencil } from 'lucide-react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import type { MessageTemplate } from '@/types';
 
-const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
-const HEADER_TYPES = ['text', 'image', 'video', 'document'] as const;
-
-const categoryColors: Record<string, string> = {
-  Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
-  Utility: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
-  Authentication: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
+const STATUS_STYLE: Record<string, string> = {
+  Approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Rejected:  'bg-red-50 text-red-600 border-red-200',
+  Pending:   'bg-yellow-50 text-yellow-700 border-yellow-200',
+  Draft:     'bg-muted text-muted-foreground border-border',
 };
 
-const statusColors: Record<string, string> = {
-  Draft: 'bg-slate-600/20 text-slate-400 border-slate-600/30',
-  Pending: 'bg-yellow-600/20 text-yellow-400 border-yellow-600/30',
-  Approved: 'bg-violet-600/20 text-violet-400 border-violet-600/30',
-  Rejected: 'bg-red-600/20 text-red-400 border-red-600/30',
-};
-
-interface TemplateFormData {
-  name: string;
-  category: MessageTemplate['category'];
-  language: string;
-  body_text: string;
-  header_type: string;
-  footer_text: string;
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_STYLE[status] ?? STATUS_STYLE.Draft;
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${s}`}>
+      {status ?? 'Draft'}
+    </span>
+  );
 }
 
-// Meta's language codes are exact — "en" and "en_US" are distinct and a
-// template approved under one will be rejected if you send with the other
-// (Graph API error #132001 "Template name does not exist in the
-// translation"). Default to en_US to match the DB default on
-// message_templates.language and the broadcasts sender's fallback.
-const emptyForm: TemplateFormData = {
-  name: '',
-  category: 'Marketing',
-  language: 'en_US',
-  body_text: '',
-  header_type: '',
-  footer_text: '',
+const CATEGORY_STYLE: Record<string, string> = {
+  Marketing:      'bg-purple-50 text-purple-700 border-purple-200',
+  Utility:        'bg-blue-50 text-blue-700 border-blue-200',
+  Authentication: 'bg-amber-50 text-amber-700 border-amber-200',
 };
 
-// Common Meta template language codes. The field still accepts any
-// string — this just offers autocomplete for the usual suspects. Full
-// list: https://developers.facebook.com/docs/whatsapp/api/messages/message-templates#supported-languages
-const COMMON_LANGUAGE_CODES = [
-  'en_US',
-  'en_GB',
-  'en',
-  'es',
-  'es_ES',
-  'es_MX',
-  'fr',
-  'fr_FR',
-  'de',
-  'it',
-  'pt_BR',
-  'pt_PT',
-  'nl',
-  'pl',
-  'ru',
-  'tr',
-  'lt',
-];
+function CategoryBadge({ category }: { category: string }) {
+  const s = CATEGORY_STYLE[category] ?? '';
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${s}`}>
+      {category}
+    </span>
+  );
+}
 
 export function TemplateManager() {
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, ownerId, loading: authLoading } = useAuth();
 
-  const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [form, setForm] = useState<TemplateFormData>(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    fetchTemplates(user.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+    if (authLoading || !user) { setLoading(false); return; }
+    if (ownerId) fetchTemplates(ownerId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, user?.id, ownerId]);
 
   async function fetchTemplates(userId: string) {
-    try {
-      setLoading(true);
-
-      const { data, error } = await supabase
-        .from('message_templates')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setTemplates(data || []);
-    } catch (err) {
-      console.error('Failed to fetch templates:', err);
-      toast.error('Failed to load templates');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('message_templates')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) toast.error('Failed to load templates');
+    setTemplates(data ?? []);
+    setLoading(false);
   }
 
-  async function handleSave() {
-    if (!form.name.trim()) {
-      toast.error('Template name is required');
-      return;
-    }
-    if (!form.body_text.trim()) {
-      toast.error('Body text is required');
-      return;
-    }
-
-    try {
-      setSaving(true);
-      if (!user) {
-        toast.error('Not authenticated');
-        return;
-      }
-
-      const payload = {
-        user_id: user.id,
-        name: form.name.trim(),
-        category: form.category,
-        language: form.language.trim() || 'en_US',
-        body_text: form.body_text.trim(),
-        header_type: form.header_type || null,
-        footer_text: form.footer_text.trim() || null,
-        status: 'Draft' as const,
-      };
-
-      const { error } = await supabase
-        .from('message_templates')
-        .insert(payload);
-
-      if (error) throw error;
-
-      toast.success('Template created successfully');
-      setDialogOpen(false);
-      setForm(emptyForm);
-      if (user) await fetchTemplates(user.id);
-    } catch (err) {
-      console.error('Save error:', err);
-      toast.error('Failed to create template');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  /**
-   * Pull approved templates from Meta and upsert them into the local
-   * catalog. After this runs, every local row is guaranteed to match
-   * something Meta will actually accept on send — stops users getting
-   * stuck on error #132001 "Template name does not exist".
-   */
-  async function handleSyncFromMeta() {
-    if (!user) return;
+  async function handleSync() {
     setSyncing(true);
     try {
-      const res = await fetch('/api/whatsapp/templates/sync', {
-        method: 'POST',
-      });
+      const res = await fetch('/api/whatsapp/templates/sync', { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
-      }
-      toast.success(
-        `Synced ${data.total} template${data.total === 1 ? '' : 's'} from Meta` +
-          (data.inserted || data.updated
-            ? ` (${data.inserted} new, ${data.updated} updated)`
-            : ''),
-      );
-      if (Array.isArray(data.errors) && data.errors.length > 0) {
-        // Surface per-template failures so users don't trust a green
-        // toast that hides silent drift.
-        const preview = data.errors.slice(0, 3).map(
-          (e: { name: string; language: string; message: string }) =>
-            `${e.name} (${e.language})`,
-        );
-        const suffix =
-          data.errors.length > 3 ? `, +${data.errors.length - 3} more` : '';
-        toast.error(`Failed to sync: ${preview.join(', ')}${suffix}`);
-      }
-      if (data.truncated) {
-        toast.warning(
-          'Hit Meta pagination cap — more templates may exist. Contact support if this persists.',
-        );
-      }
-      await fetchTemplates(user.id);
+      if (!res.ok) throw new Error(data?.error ?? 'Sync failed');
+      toast.success(`Synced ${data.total ?? 0} templates from Meta`);
+      if (ownerId) await fetchTemplates(ownerId);
     } catch (err) {
-      console.error('Template sync error:', err);
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to sync templates',
-      );
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setSyncing(false);
     }
   }
 
-  async function handleDelete(id: string) {
-    try {
-      const { error } = await supabase
-        .from('message_templates')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      toast.success('Template deleted');
-      setTemplates((prev) => prev.filter((t) => t.id !== id));
-    } catch (err) {
-      console.error('Delete error:', err);
-      toast.error('Failed to delete template');
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const { error } = await supabase.from('message_templates').delete().eq('id', deleteTarget.id);
+    if (error) {
+      toast.error('Failed to delete');
+    } else {
+      setTemplates((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+      toast.success('Deleted');
+      setDeleteTarget(null);
     }
+    setDeleting(false);
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-violet-500" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  );
 
   return (
     <div className="space-y-4 mt-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">Message Templates</h2>
-          <p className="text-sm text-slate-400">
-            Create and manage your WhatsApp message templates. Meta requires
-            every template to be approved in the WhatsApp Manager before it can
-            be sent — use &quot;Sync from Meta&quot; to pull your approved list.
+          <h2 className="text-[15px] font-semibold text-foreground">Message templates</h2>
+          <p className="text-[13px] text-muted-foreground mt-0.5">
+            Reusable, Meta-approved formats for broadcasts and automated replies.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSyncFromMeta}
-            disabled={syncing}
-            className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800"
-            title="Pull approved templates from your Meta WhatsApp Business Account"
-          >
-            <RefreshCw
-              className={`size-4 ${syncing ? 'animate-spin' : ''}`}
-            />
-            {syncing ? 'Syncing…' : 'Sync from Meta'}
+          <Button variant="outline" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            Sync from Meta
           </Button>
-          <Button
-            onClick={() => {
-              setForm(emptyForm);
-              setDialogOpen(true);
-            }}
-            className="bg-violet-600 hover:bg-violet-700 text-white"
+          <Link
+            href="/templates/new"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[13px] font-medium text-background hover:bg-foreground/90 transition-colors"
           >
-            <Plus className="size-4" />
-            New Template
-          </Button>
+            <Plus className="h-3.5 w-3.5" />
+            New template
+          </Link>
         </div>
       </div>
 
       {templates.length === 0 ? (
-        <Card className="bg-slate-900 border-slate-700 ring-0 ring-transparent">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-slate-400 text-sm">No templates yet.</p>
-            <p className="text-slate-500 text-xs mt-1">Create your first message template to get started.</p>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card py-16 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted mb-3">
+            <Plus className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <p className="text-[14px] font-semibold text-foreground">No templates yet</p>
+          <p className="text-[13px] text-muted-foreground mt-1 mb-5 max-w-xs">
+            Create a template to start sending broadcasts and automated messages.
+          </p>
+          <Link
+            href="/templates/new"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-4 py-2 text-[13px] font-medium text-background hover:bg-foreground/90 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New template
+          </Link>
+        </div>
       ) : (
-        <div className="grid gap-3">
-          {templates.map((template) => (
-            <Card key={template.id} className="bg-slate-900 border-slate-700 ring-0 ring-transparent">
-              <CardContent className="flex items-start justify-between pt-4">
-                <div className="space-y-2 min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-medium text-white">{template.name}</h3>
-                    <Badge
-                      className={`text-xs border ${categoryColors[template.category] || ''}`}
-                    >
-                      {template.category}
-                    </Badge>
-                    <Badge
-                      className={`text-xs border ${statusColors[template.status || 'Draft'] || ''}`}
-                    >
-                      {template.status || 'Draft'}
-                    </Badge>
-                    {template.language && (
-                      <span className="text-xs text-slate-500 uppercase">{template.language}</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-400 line-clamp-2">{template.body_text}</p>
-                  {template.footer_text && (
-                    <p className="text-xs text-slate-500 italic">{template.footer_text}</p>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDelete(template.id)}
-                  className="text-slate-400 hover:text-red-400 hover:bg-red-950/30 shrink-0 ml-2"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Language</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {templates.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell><span className="font-medium text-foreground">{t.name}</span></TableCell>
+                  <TableCell><CategoryBadge category={t.category} /></TableCell>
+                  <TableCell className="text-muted-foreground">{t.language ?? 'en_US'}</TableCell>
+                  <TableCell><StatusBadge status={t.status ?? 'Draft'} /></TableCell>
+                  <TableCell className="text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Link
+                        href={`/templates/${t.id}`}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Link>
+                      <button
+                        onClick={() => setDeleteTarget(t)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
-      {/* New Template Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 sm:max-w-lg">
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-white">New Message Template</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Create a new WhatsApp message template.
-            </DialogDescription>
+            <DialogTitle>Delete template</DialogTitle>
+            <DialogDescription>Delete <strong>{deleteTarget?.name}</strong>? Cannot be undone.</DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-slate-300">Template Name</Label>
-              <Input
-                placeholder="e.g. order_confirmation"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-slate-300">Category</Label>
-                <Select
-                  value={form.category}
-                  onValueChange={(val) =>
-                    setForm({ ...form, category: val as MessageTemplate['category'] })
-                  }
-                >
-                  <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat} className="text-white focus:bg-slate-700 focus:text-white">
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-slate-300">Language</Label>
-                <Input
-                  list="template-language-codes"
-                  placeholder="en_US"
-                  value={form.language}
-                  onChange={(e) => setForm({ ...form, language: e.target.value })}
-                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-                />
-                <datalist id="template-language-codes">
-                  {COMMON_LANGUAGE_CODES.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
-                <p className="text-[11px] text-slate-500">
-                  Must match the exact language code the template is approved
-                  under on Meta — e.g. <code>en_US</code> and <code>en</code>{' '}
-                  are distinct.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-slate-300">Header Type</Label>
-              <Select
-                value={form.header_type}
-                onValueChange={(val) => setForm({ ...form, header_type: val || '' })}
-              >
-                <SelectTrigger className="w-full bg-slate-800 border-slate-700 text-white">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent className="bg-slate-800 border-slate-700">
-                  <SelectItem value="none" className="text-white focus:bg-slate-700 focus:text-white">
-                    None
-                  </SelectItem>
-                  {HEADER_TYPES.map((type) => (
-                    <SelectItem key={type} value={type} className="text-white focus:bg-slate-700 focus:text-white">
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-slate-300">Body Text</Label>
-              <Textarea
-                placeholder="Enter your template message body. Use {{1}}, {{2}} for variables."
-                value={form.body_text}
-                onChange={(e) => setForm({ ...form, body_text: e.target.value })}
-                rows={4}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 resize-none"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-slate-300">Footer Text</Label>
-              <Input
-                placeholder="Optional footer text"
-                value={form.footer_text}
-                onChange={(e) => setForm({ ...form, footer_text: e.target.value })}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="bg-slate-900 border-slate-700">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-violet-600 hover:bg-violet-700 text-white"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                'Create Template'
-              )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button onClick={handleDelete} disabled={deleting} className="bg-destructive text-white hover:bg-destructive/90">
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>
