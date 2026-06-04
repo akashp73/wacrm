@@ -146,6 +146,21 @@ export async function POST(request: Request) {
       )
     }
 
+    // Validate ENCRYPTION_KEY before attempting to encrypt
+    const encKey = process.env.ENCRYPTION_KEY
+    if (!encKey) {
+      return NextResponse.json(
+        { error: 'ENCRYPTION_KEY not set in environment variables' },
+        { status: 500 }
+      )
+    }
+    if (encKey.length !== 64) {
+      return NextResponse.json(
+        { error: 'ENCRYPTION_KEY must be 64 hex characters' },
+        { status: 500 }
+      )
+    }
+
     // Encrypt sensitive tokens before storing
     let encryptedAccessToken: string
     let encryptedVerifyToken: string | null
@@ -156,10 +171,7 @@ export async function POST(request: Request) {
       const message = err instanceof Error ? err.message : 'Unknown encryption error'
       console.error('Encryption failed:', message)
       return NextResponse.json(
-        {
-          error:
-            'Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.',
-        },
+        { error: `Failed to encrypt token: ${message}` },
         { status: 500 }
       )
     }
