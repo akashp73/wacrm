@@ -150,7 +150,7 @@ export async function runChatbotsForContact({
 // ─── Trigger matching ─────────────────────────────────────────────────────────
 
 function matchesTrigger(cfg: TriggerConfig, message: ChatbotMessage): boolean {
-  const tt = ((cfg.trigger_type ?? 'new_message').toLowerCase().replace(/\s+/g, '_')).replace('keyword_match', 'hot_keywords  return true
+  const tt = (cfg.trigger_type ?? 'new_message').toLowerCase().replace(/\s+/g, '_').replace('keyword_match', 'hot_keywords')
   }
 
   if (tt === 'hot_keywords' && cfg.keywords) {
