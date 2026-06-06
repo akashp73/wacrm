@@ -160,7 +160,7 @@ export async function GET(request: Request) {
               template_name: broadcast.template_name,
               message_id: result.messageId,
               status: 'sent',
-            }).catch(() => {})
+            })
             await admin.from('conversations').update({
               last_message_text: lastText,
               last_message_at: new Date().toISOString(),

@@ -271,14 +271,15 @@ async function executeFromNode(
           })
           console.log('[chatbot] Message sent ✓')
           if (session.conversation_id) {
-            await admin.from('messages').insert({
+            const { error: msgErr } = await admin.from('messages').insert({
               conversation_id: session.conversation_id as string,
               sender_type: 'bot',
               content_type: 'text',
               content_text: interpolated,
               message_id: result.messageId,
               status: 'sent',
-            }).catch((e: unknown) => console.error('[chatbot] msg insert failed:', e instanceof Error ? e.message : e))
+            })
+            if (msgErr) console.error('[chatbot] msg insert failed:', msgErr.message)
           }
         } catch (err) {
           console.error('[chatbot] send_text failed:', err instanceof Error ? err.message : err)
@@ -304,14 +305,15 @@ async function executeFromNode(
           })
           console.log('[chatbot] Template sent ✓')
           if (session.conversation_id) {
-            await admin.from('messages').insert({
+            const { error: msgErr } = await admin.from('messages').insert({
               conversation_id: session.conversation_id as string,
               sender_type: 'bot',
               content_type: 'template',
               template_name: name,
               message_id: result.messageId,
               status: 'sent',
-            }).catch((e: unknown) => console.error('[chatbot] msg insert failed:', e instanceof Error ? e.message : e))
+            })
+            if (msgErr) console.error('[chatbot] msg insert failed:', msgErr.message)
           }
         } catch (err) {
           console.error('[chatbot] send_template failed:', err instanceof Error ? err.message : err)
@@ -337,7 +339,7 @@ async function executeFromNode(
               content_text: questionText,
               message_id: result.messageId,
               status: 'sent',
-            }).catch(() => {})
+            })
           }
         } catch (err) {
           console.error('[chatbot] ask_question send failed:', err instanceof Error ? err.message : err)
@@ -442,7 +444,7 @@ async function resumeSession(
           content_text: invalidMsg,
           message_id: result.messageId,
           status: 'sent',
-        }).catch(() => {})
+        })
       }
     } catch {
       // ignore — the session retry/fail logic below still runs
