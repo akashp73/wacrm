@@ -14,24 +14,6 @@ interface Chatbot {
   is_active: boolean;
 }
 
-interface DbNode {
-  id: string;
-  chatbot_id: string;
-  node_type: string;
-  label: string;
-  config: Record<string, unknown>;
-  position_x: number;
-  position_y: number;
-}
-
-interface DbEdge {
-  id: string;
-  source_node_id: string;
-  target_node_id: string;
-  source_handle?: string;
-  label?: string;
-}
-
 interface Variable { id?: string; name: string; var_type: string }
 
 export default function FlowPage() {
@@ -39,8 +21,6 @@ export default function FlowPage() {
   const router = useRouter();
 
   const [chatbot, setChatbot] = useState<Chatbot | null>(null);
-  const [nodes, setNodes] = useState<DbNode[]>([]);
-  const [edges, setEdges] = useState<DbEdge[]>([]);
   const [variables, setVariables] = useState<Variable[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,11 +36,9 @@ export default function FlowPage() {
   useEffect(() => {
     fetch(`/api/chatbots/${id}`)
       .then(r => r.json())
-      .then(({ chatbot: bot, nodes: n, edges: e, variables: v }) => {
+      .then(({ chatbot: bot, variables: v }) => {
         setChatbot(bot);
         setNameVal(bot?.name ?? '');
-        setNodes(n ?? []);
-        setEdges(e ?? []);
         setVariables(v ?? []);
       })
       .catch(() => toast.error('Failed to load flow'))
@@ -206,8 +184,6 @@ export default function FlowPage() {
       <div className="flex-1 overflow-hidden">
         <FlowBuilder
           chatbotId={id}
-          initialNodes={nodes}
-          initialEdges={edges}
           initialVariables={variables}
           onSave={(rfNodes, rfEdges) => {
             latestNodesRef.current = rfNodes;

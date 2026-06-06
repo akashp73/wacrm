@@ -263,13 +263,23 @@ async function executeFromNode(
         const interpolated = interp(text)
         console.log(`[chatbot] Sending text: "${interpolated.slice(0, 80)}"`)
         try {
-          await sendTextMessage({
+          const result = await sendTextMessage({
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: contact.phone,
             text: interpolated,
           })
           console.log('[chatbot] Message sent ✓')
+          if (session.conversation_id) {
+            await admin.from('messages').insert({
+              conversation_id: session.conversation_id as string,
+              sender_type: 'bot',
+              content_type: 'text',
+              content_text: interpolated,
+              message_id: result.messageId,
+              status: 'sent',
+            }).catch((e: unknown) => console.error('[chatbot] msg insert failed:', e instanceof Error ? e.message : e))
+          }
         } catch (err) {
           console.error('[chatbot] send_text failed:', err instanceof Error ? err.message : err)
         }
@@ -284,7 +294,7 @@ async function executeFromNode(
           : []
         console.log(`[chatbot] Sending template: "${name}"`)
         try {
-          await sendTemplateMessage({
+          const result = await sendTemplateMessage({
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: contact.phone,
@@ -293,6 +303,16 @@ async function executeFromNode(
             params,
           })
           console.log('[chatbot] Template sent ✓')
+          if (session.conversation_id) {
+            await admin.from('messages').insert({
+              conversation_id: session.conversation_id as string,
+              sender_type: 'bot',
+              content_type: 'template',
+              template_name: name,
+              message_id: result.messageId,
+              status: 'sent',
+            }).catch((e: unknown) => console.error('[chatbot] msg insert failed:', e instanceof Error ? e.message : e))
+          }
         } catch (err) {
           console.error('[chatbot] send_template failed:', err instanceof Error ? err.message : err)
         }
@@ -300,14 +320,25 @@ async function executeFromNode(
     } else if (nodeType === 'ask_question') {
       const question = (cfg.question as string) ?? ''
       if (question) {
+        const questionText = interp(question)
         console.log(`[chatbot] Asking question: "${question.slice(0, 80)}"`)
         try {
-          await sendTextMessage({
+          const result = await sendTextMessage({
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: contact.phone,
-            text: interp(question),
+            text: questionText,
           })
+          if (session.conversation_id) {
+            await admin.from('messages').insert({
+              conversation_id: session.conversation_id as string,
+              sender_type: 'bot',
+              content_type: 'text',
+              content_text: questionText,
+              message_id: result.messageId,
+              status: 'sent',
+            }).catch(() => {})
+          }
         } catch (err) {
           console.error('[chatbot] ask_question send failed:', err instanceof Error ? err.message : err)
         }
@@ -401,7 +432,21 @@ async function resumeSession(
     const retries = ((session.retry_count as number) ?? 0) + 1
     const maxRetries = ((node?.config as Record<string, unknown>)?.max_retries as number) ?? 3
 
-    await sendTextMessage({ phoneNumberId: config.phone_number_id, accessToken, to: contact.phone, text: invalidMsg }).catch(() => {})
+    try {
+      const result = await sendTextMessage({ phoneNumberId: config.phone_number_id, accessToken, to: contact.phone, text: invalidMsg })
+      if (session.conversation_id) {
+        await admin.from('messages').insert({
+          conversation_id: session.conversation_id as string,
+          sender_type: 'bot',
+          content_type: 'text',
+          content_text: invalidMsg,
+          message_id: result.messageId,
+          status: 'sent',
+        }).catch(() => {})
+      }
+    } catch {
+      // ignore — the session retry/fail logic below still runs
+    }
 
     if (retries >= maxRetries) {
       await admin.from('chatbot_sessions').update({ status: 'failed' }).eq('id', session.id)

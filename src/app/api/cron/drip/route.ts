@@ -90,24 +90,60 @@ export async function GET(request: Request) {
         .replace(/\{\{phone\}\}/gi, contact.phone)
 
     try {
+      let waResult: { messageId: string } | null = null
+      let sentText: string | null = null
+      let sentTemplate: string | null = null
+
       if (step.message_type === 'text' && step.content) {
-        await sendTextMessage({
+        sentText = interpolate(step.content)
+        waResult = await sendTextMessage({
           phoneNumberId: config.phone_number_id,
           accessToken,
           to: phone,
-          text: interpolate(step.content),
+          text: sentText,
         })
       } else if (step.message_type === 'template' && step.template_name) {
+        sentTemplate = step.template_name as string
         const vars = step.template_variables as Record<string, string> | null
         const params = vars ? Object.values(vars).map(interpolate) : []
-        await sendTemplateMessage({
+        waResult = await sendTemplateMessage({
           phoneNumberId: config.phone_number_id,
           accessToken,
           to: phone,
-          templateName: step.template_name,
+          templateName: sentTemplate,
           language: step.template_language ?? 'en_US',
           params,
         })
+      }
+
+      if (waResult) {
+        // Look up the conversation for this contact so the message appears in the inbox
+        const { data: conv } = await admin
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', enrollment.contact_id as string)
+          .eq('user_id', campaign.user_id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (conv?.id) {
+          const lastText = sentTemplate ? `[template:${sentTemplate}]` : sentText
+          await admin.from('messages').insert({
+            conversation_id: conv.id,
+            sender_type: 'bot',
+            content_type: sentTemplate ? 'template' : 'text',
+            content_text: sentText,
+            template_name: sentTemplate,
+            message_id: waResult.messageId,
+            status: 'sent',
+          }).catch(() => {})
+          await admin.from('conversations').update({
+            last_message_text: lastText,
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', conv.id)
+        }
       }
     } catch {
       // Sending failed — still advance to avoid getting stuck; log and continue

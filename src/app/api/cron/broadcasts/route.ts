@@ -140,6 +140,33 @@ export async function GET(request: Request) {
             .eq('id', recipient.id)
 
           sentCount++
+
+          // Save to inbox so the conversation shows the sent message
+          const { data: conv } = await admin
+            .from('conversations')
+            .select('id')
+            .eq('contact_id', recipient.contact_id)
+            .eq('user_id', broadcast.user_id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (conv?.id) {
+            const lastText = `[template:${broadcast.template_name}]`
+            await admin.from('messages').insert({
+              conversation_id: conv.id,
+              sender_type: 'bot',
+              content_type: 'template',
+              template_name: broadcast.template_name,
+              message_id: result.messageId,
+              status: 'sent',
+            }).catch(() => {})
+            await admin.from('conversations').update({
+              last_message_text: lastText,
+              last_message_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', conv.id)
+          }
         } catch {
           await admin
             .from('broadcast_recipients')

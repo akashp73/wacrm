@@ -48,8 +48,6 @@ interface DbEdge {
 
 interface FlowBuilderProps {
   chatbotId: string;
-  initialNodes: DbNode[];
-  initialEdges: DbEdge[];
   initialVariables: BotVariable[];
   onSave: (n: Node[], e: Edge[]) => void;
   showVarPanel: boolean;
@@ -75,7 +73,7 @@ const edgeStyle = (handle?: string | null) => ({
 
 // ─── Canvas inner ─────────────────────────────────────────────
 
-function Canvas({ chatbotId, initialNodes, initialEdges, initialVariables,
+function Canvas({ chatbotId, initialVariables,
   onSave, showVarPanel, setShowVarPanel }: FlowBuilderProps) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -151,16 +149,21 @@ function Canvas({ chatbotId, initialNodes, initialEdges, initialVariables,
     };
   }, [makeCallbacks]);
 
-  // ── Init from DB ──
+  // ── Load nodes/edges from API ──
   useEffect(() => {
-    setNodes(initialNodes.map((n, i) => buildNode(n, i)));
-    setEdges(initialEdges.map(e => ({
-      id: e.id, source: e.source_node_id, target: e.target_node_id,
-      sourceHandle: e.source_handle ?? 'output', label: e.label ?? '',
-      ...edgeStyle(e.source_handle),
-    })));
-    setTimeout(() => fitView({ padding: 0.3 }), 100);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    fetch(`/api/chatbots/${chatbotId}`)
+      .then(r => r.json())
+      .then(({ nodes: dbNodes = [], edges: dbEdges = [] }: { nodes: DbNode[]; edges: DbEdge[] }) => {
+        setNodes(dbNodes.map((n, i) => buildNode(n, i)));
+        setEdges(dbEdges.map(e => ({
+          id: e.id, source: e.source_node_id, target: e.target_node_id,
+          sourceHandle: e.source_handle ?? 'output', label: e.label ?? '',
+          ...edgeStyle(e.source_handle),
+        })));
+        setTimeout(() => fitView({ padding: 0.3 }), 100);
+      })
+      .catch(() => {});
+  }, [chatbotId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Connect ──
   const onConnect = useCallback((params: Connection) => {
