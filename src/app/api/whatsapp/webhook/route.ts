@@ -472,7 +472,7 @@ async function processMessage(
     .eq('id', conversation.id)
 
   // ── 9. Broadcast reply tracking ──────────────────────────────────────────
-  await flagBroadcastReplyIfAny(userId, contactRecord.id)
+  try { await flagBroadcastReplyIfAny(userId, contactRecord.id) } catch (e) { console.error("[broadcast-flag] error:", e) }
 
   // ── 10. Chatbot engine ───────────────────────────────────────────────────
   // MUST be awaited — fire-and-forget is not tracked by after() so Vercel
