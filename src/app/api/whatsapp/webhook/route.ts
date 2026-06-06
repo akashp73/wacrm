@@ -597,8 +597,8 @@ async function runAIAgentIfActive({
   // Build message history for AI (oldest first, exclude current message — it's already at top)
   const history = (recentMsgs ?? [])
     .reverse()
-    .filter((m) => m.content_text)
-    .map((m) => ({
+    .filter((m: any) => m.content_text)
+    .map((m: any) => ({
       role: m.sender_type === 'customer' ? 'user' : 'assistant',
       content: m.content_text as string,
     })) as { role: 'user' | 'assistant'; content: string }[]
