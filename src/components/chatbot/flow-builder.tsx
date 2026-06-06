@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MiniMap,
   addEdge, useNodesState, useEdgesState,
@@ -89,6 +89,15 @@ function Canvas({ chatbotId, initialNodes, initialEdges, initialVariables,
   const [actionPanelMode, setActionPanelMode] = useState<'pick' | 'configure'>('configure');
 
   const { screenToFlowPosition, fitView } = useReactFlow();
+
+  // Keep onSave stable via ref to avoid stale-closure issues in the effect below
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  // Sync latest nodes/edges to parent ref on every canvas change so Save always has current data
+  useEffect(() => {
+    onSaveRef.current(nodes, edges);
+  }, [nodes, edges]);
 
   // ── Callbacks (stable IDs) ──
   const makeCallbacks = useCallback((id: string, type: string) => ({
