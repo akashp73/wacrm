@@ -168,17 +168,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // `after()` registers work with Next.js / Vercel's waitUntil mechanism.
-  // Unlike a bare fire-and-forget promise, this guarantees the serverless
-  // function stays alive until processWebhook settles — so DB writes are
-  // never dropped when Vercel tears down the function after sending the 200.
-  after(async () => {
-    try {
-      await processWebhook(body)
-    } catch (error) {
-      console.error('Error processing webhook:', error)
-    }
-  })
+  try {
+    await processWebhook(body)
+  } catch (error) {
+    console.error('Error processing webhook:', error)
+  }
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
