@@ -1,80 +1,143 @@
 import Link from 'next/link'
-import { ShieldCheck, ArrowRight } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Star, TrendingUp, MessageCircle, Users } from 'lucide-react'
 import { InboxMock } from './mock/inbox-mock'
 
-/**
- * Above-the-fold hero. Two-column on desktop (copy + product visual),
- * stacks on mobile. The product miniature doubles as proof of what
- * the app actually looks like — better than a generic illustration.
- */
+const TRUST_POINTS = [
+  'No credit card required',
+  'Setup in under 30 minutes',
+  'Official WhatsApp® Business API',
+]
+
+const STATS = [
+  { icon: Users, value: '10,000+', label: 'Businesses' },
+  { icon: MessageCircle, value: '500M+', label: 'Messages sent' },
+  { icon: TrendingUp, value: '3x', label: 'More conversions' },
+  { icon: Star, value: '4.9 / 5', label: 'Customer rating' },
+]
+
 export function Hero() {
   return (
-    <div className="relative overflow-hidden">
-      {/* Soft radial glow behind the hero. Pure CSS so it doesn't
-          count against any image budget. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 opacity-60"
-        style={{
-          background:
-            'radial-gradient(800px circle at 70% -10%, rgb(139 92 246 / 0.18), transparent 60%), radial-gradient(600px circle at 10% 30%, rgb(59 130 246 / 0.08), transparent 60%)',
-        }}
-      />
+    <>
+      {/* Hero section */}
+      <div className="relative overflow-hidden bg-white">
+        {/* Subtle green tint top-right */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute right-0 top-0 h-[600px] w-[600px] -z-0 opacity-30"
+          style={{
+            background: 'radial-gradient(circle at top right, #dcfce7, transparent 65%)',
+          }}
+        />
 
-      <div className="mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-6 py-20 sm:py-28 lg:grid-cols-2 lg:gap-16">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
-            <ShieldCheck className="h-3.5 w-3.5 text-violet-400" />
-            Built on the official WhatsApp® Business API
+        <div className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-12 px-6 py-16 sm:py-24 lg:grid-cols-2 lg:gap-20">
+          {/* Left — copy */}
+          <div className="relative">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-4 py-1.5 text-xs font-semibold text-green-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              Powered by Official WhatsApp® Business API
+            </div>
+
+            {/* Headline */}
+            <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
+              Grow your business{' '}
+              <span className="relative whitespace-nowrap">
+                <span
+                  className="relative bg-clip-text text-transparent"
+                  style={{ backgroundImage: 'linear-gradient(135deg, #16a34a 0%, #25D366 60%)' }}
+                >
+                  with WhatsApp
+                </span>
+              </span>
+            </h1>
+
+            <p className="mt-5 max-w-lg text-lg leading-relaxed text-gray-500">
+              Send bulk campaigns, automate replies, manage your team inbox,
+              and close more deals — all in one place. The WhatsApp CRM built
+              for growing businesses.
+            </p>
+
+            {/* CTAs */}
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href="/signup"
+                className="inline-flex items-center gap-2 rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-lg transition-all hover:shadow-xl hover:opacity-95 active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #25D366 0%, #16a34a 100%)' }}
+              >
+                Start for Free
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-6 py-3.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50"
+              >
+                Already have an account? Login →
+              </Link>
+            </div>
+
+            {/* Trust points */}
+            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2">
+              {TRUST_POINTS.map((t) => (
+                <span key={t} className="flex items-center gap-1.5 text-sm text-gray-500">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                  {t}
+                </span>
+              ))}
+            </div>
+
+            {/* Social proof avatars */}
+            <div className="mt-8 flex items-center gap-4 border-t border-gray-100 pt-6">
+              <div className="flex -space-x-2.5">
+                {[10, 20, 30, 40, 50].map((n) => (
+                  <img
+                    key={n}
+                    src={`https://i.pravatar.cc/40?img=${n}`}
+                    alt=""
+                    className="h-9 w-9 rounded-full border-2 border-white object-cover shadow-sm"
+                  />
+                ))}
+              </div>
+              <div>
+                <div className="flex items-center gap-0.5">
+                  {[1,2,3,4,5].map((n) => (
+                    <Star key={n} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  Loved by <span className="font-semibold text-gray-800">10,000+ businesses</span>
+                </p>
+              </div>
+            </div>
           </div>
 
-          <h1 className="mt-5 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-            Run your WhatsApp business from{' '}
-            <span className="text-violet-400">one inbox.</span>
-          </h1>
-
-          <p className="mt-5 max-w-xl text-base text-slate-400 sm:text-lg">
-            Shared inbox, contact hub, sales pipelines, broadcasts, and
-            no-code automations — in one place. Get your team on the same
-            page without switching tools.
-          </p>
-
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link
-              href="/signup"
-              className="inline-flex items-center gap-2 rounded-lg bg-violet-500 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-400"
-            >
-              Get started
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 transition-colors hover:border-slate-600 hover:text-white"
-            >
-              Sign in
-            </Link>
+          {/* Right — visual */}
+          <div className="relative lg:justify-self-end">
+            <div
+              className="absolute -inset-4 rounded-3xl opacity-20 blur-2xl"
+              style={{ background: 'linear-gradient(135deg, #25D366, #16a34a)' }}
+              aria-hidden
+            />
+            <div className="relative rounded-2xl shadow-2xl ring-1 ring-gray-200/50">
+              <InboxMock />
+            </div>
           </div>
-
-          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-              No credit card required
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-              Live in 30 minutes
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
-              Your data, your Supabase
-            </span>
-          </div>
-        </div>
-
-        <div className="lg:justify-self-end">
-          <InboxMock />
         </div>
       </div>
-    </div>
+
+      {/* Stats strip */}
+      <div className="border-y border-gray-100 bg-gray-50">
+        <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-0 px-6 sm:grid-cols-4 divide-x divide-gray-200">
+          {STATS.map(({ icon: Icon, value, label }) => (
+            <div key={label} className="flex flex-col items-center py-8 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 mb-3">
+                <Icon className="h-5 w-5 text-green-600" />
+              </div>
+              <p className="text-2xl font-extrabold text-gray-900 sm:text-3xl">{value}</p>
+              <p className="mt-1 text-sm text-gray-500">{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   )
 }

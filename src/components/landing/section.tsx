@@ -1,42 +1,36 @@
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
-/**
- * Shared section wrapper — consistent horizontal padding, max-width,
- * and vertical rhythm across every landing section. Keeping it in one
- * place means tweaking spacing once vs. in every section component.
- */
 export function Section({
   id,
   className,
   children,
   tight,
+  tinted,
 }: {
   id?: string
   className?: string
   children: ReactNode
-  /** Compact vertical padding — useful for nav strips / dense sections. */
   tight?: boolean
+  tinted?: boolean
 }) {
   return (
     <section
       id={id}
-      className={cn(
-        'mx-auto w-full max-w-7xl px-6',
-        tight ? 'py-6' : 'py-20 sm:py-24',
-        className,
-      )}
+      className={cn(tinted && 'bg-gray-50', className)}
     >
-      {children}
+      <div
+        className={cn(
+          'mx-auto w-full max-w-7xl px-6',
+          tight ? 'py-6' : 'py-20 sm:py-24',
+        )}
+      >
+        {children}
+      </div>
     </section>
   )
 }
 
-/**
- * Pair of small label + big headline used atop every section. The
- * eyebrow establishes context in 1-2 words before the user commits
- * to reading the headline.
- */
 export function SectionHeader({
   eyebrow,
   title,
@@ -48,21 +42,23 @@ export function SectionHeader({
   description?: string
   align?: 'center' | 'left'
 }) {
-  const base =
-    align === 'center' ? 'text-center' : 'text-left'
-  const max = align === 'center' ? 'max-w-2xl mx-auto' : 'max-w-2xl'
   return (
-    <div className={cn(base, max, 'mb-12')}>
-      {eyebrow && (
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-violet-400">
-          {eyebrow}
-        </p>
+    <div
+      className={cn(
+        align === 'center' ? 'text-center mx-auto max-w-2xl' : 'text-left max-w-2xl',
+        'mb-14',
       )}
-      <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+    >
+      {eyebrow && (
+        <span className="inline-block rounded-full bg-green-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-green-600 mb-4">
+          {eyebrow}
+        </span>
+      )}
+      <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
         {title}
       </h2>
       {description && (
-        <p className="mt-4 text-base text-slate-400">{description}</p>
+        <p className="mt-4 text-base leading-relaxed text-gray-500">{description}</p>
       )}
     </div>
   )

@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "src/app/api/whatsapp/webhook/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/chatbots/execute/route.ts": {
+      "maxDuration": 10
+    },
+    "src/app/api/automations/engine/route.ts": {
+      "maxDuration": 10
+    }
+  }
+}

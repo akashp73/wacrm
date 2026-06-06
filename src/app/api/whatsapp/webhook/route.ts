@@ -1,10 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
+
+// Tell Vercel to allow the maximum duration for this route.
+// Free tier: 10 s.  Pro: 60 s.  Change to 60 after upgrading.
+export const maxDuration = 10
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { runChatbotsForContact } from '@/lib/chatbot/runner'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,9 +168,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Process asynchronously so we can ack Meta within their timeout.
-  processWebhook(body).catch((error) => {
-    console.error('Error processing webhook:', error)
+  // `after()` registers work with Next.js / Vercel's waitUntil mechanism.
+  // Unlike a bare fire-and-forget promise, this guarantees the serverless
+  // function stays alive until processWebhook settles — so DB writes are
+  // never dropped when Vercel tears down the function after sending the 200.
+  after(async () => {
+    try {
+      await processWebhook(body)
+    } catch (error) {
+      console.error('Error processing webhook:', error)
+    }
   })
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
@@ -198,11 +210,28 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         .single()
 
       if (configError || !config) {
-        console.error('No config found for phone_number_id:', phoneNumberId)
+        console.error('[webhook] No config found for phone_number_id:', phoneNumberId, configError?.message)
         continue
       }
+      console.log(`[webhook] Config found for phone_number_id: ${phoneNumberId} → userId: ${config.user_id.slice(-8)}`)
 
-      const decryptedAccessToken = decrypt(config.access_token)
+      // Decrypt is the most common silent failure point: if ENCRYPTION_KEY
+      // is missing or was rotated since the token was saved, decrypt()
+      // throws. Without this try/catch the exception would propagate to
+      // processWebhook's .catch() handler (which only logs), and the
+      // webhook would have already returned 200 — Meta considers the
+      // delivery successful while no messages are saved to the DB.
+      let decryptedAccessToken: string
+      try {
+        decryptedAccessToken = decrypt(config.access_token)
+      } catch (err) {
+        console.error(
+          '[webhook] Failed to decrypt access_token for phone_number_id:',
+          phoneNumberId,
+          err instanceof Error ? err.message : err,
+        )
+        continue
+      }
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
@@ -359,55 +388,40 @@ async function processMessage(
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
+  const inboundText = message.text?.body ?? ''
 
-  // Parse message content based on type
-  const { contentText, mediaUrl, mediaType } = await parseMessageContent(
-    message,
-    accessToken
-  )
+  console.log(`[webhook] Received message: "${inboundText.slice(0, 80)}" type=${message.type} from=...${senderPhone.slice(-4)}`)
 
-  // Find or create contact
-  const contactOutcome = await findOrCreateContact(
-    userId,
-    senderPhone,
-    contactName
-  )
-  if (!contactOutcome) return
-  const contactRecord = contactOutcome.contact
-
-  // Find or create conversation
-  const conversation = await findOrCreateConversation(
-    userId,
-    contactRecord.id
-  )
-  if (!conversation) return
-
-  // Insert message — field names MUST match the messages table schema
-  // (see supabase/migrations/001_initial_schema.sql):
-  //   conversation_id, sender_type, content_type, content_text,
-  //   media_url, template_name, message_id, status, created_at
-  // `mediaType` is intentionally unused — the schema has no media_type
-  // column; the MIME type is only used to construct the proxy URL during
-  // parseMessageContent. Silence the unused-var warning:
+  // ── 1. Parse message content ─────────────────────────────────────────────
+  const { contentText, mediaUrl, mediaType } = await parseMessageContent(message, accessToken)
   void mediaType
 
-  // The messages.content_type CHECK constraint only allows:
-  //   text, image, document, audio, video, location, template
-  // Map incoming WhatsApp types that aren't in that list to the closest
-  // allowed value so the INSERT doesn't fail with a constraint error.
+  // ── 2. Resolve contact ───────────────────────────────────────────────────
+  const contactOutcome = await findOrCreateContact(userId, senderPhone, contactName)
+  if (!contactOutcome) {
+    console.error('[webhook] findOrCreateContact returned null — aborting')
+    return
+  }
+  const contactRecord = contactOutcome.contact
+  console.log(`[webhook] Contact resolved: id=${contactRecord.id.slice(-8)} wasCreated=${contactOutcome.wasCreated}`)
+
+  // ── 3. Resolve conversation ──────────────────────────────────────────────
+  const conversation = await findOrCreateConversation(userId, contactRecord.id)
+  if (!conversation) {
+    console.error('[webhook] findOrCreateConversation returned null — aborting')
+    return
+  }
+  console.log(`[webhook] Conversation resolved: id=${conversation.id.slice(-8)}`)
+
+  // ── 4. Map content type to allowed DB values ─────────────────────────────
   const ALLOWED_CONTENT_TYPES = new Set([
     'text', 'image', 'document', 'audio', 'video', 'location', 'template',
   ])
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
-    : message.type === 'sticker'
-      ? 'image'   // stickers are images
-      : 'text'    // reaction, unknown → text fallback
+    : message.type === 'sticker' ? 'image' : 'text'
 
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
+  // ── 5. Determine if this is the contact's first ever inbound message ─────
   const { count: priorCustomerMsgCount } = await supabaseAdmin()
     .from('messages')
     .select('id', { count: 'exact', head: true })
@@ -415,6 +429,20 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
+  // ── 6. Deduplicate (Meta replays on timeout) ─────────────────────────────
+  if (message.id) {
+    const { data: dup } = await supabaseAdmin()
+      .from('messages')
+      .select('id')
+      .eq('message_id', message.id)
+      .maybeSingle()
+    if (dup) {
+      console.log(`[webhook] Duplicate message_id=${message.id} — skipping`)
+      return
+    }
+  }
+
+  // ── 7. Save message to DB ────────────────────────────────────────────────
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',
@@ -427,12 +455,13 @@ async function processMessage(
   })
 
   if (msgError) {
-    console.error('Error inserting message:', msgError)
+    console.error('[webhook] DB insert failed:', msgError.message, msgError.details)
     return
   }
+  console.log('[webhook] Message saved to DB ✓')
 
-  // Update conversation
-  const { error: convError } = await supabaseAdmin()
+  // ── 8. Update conversation preview ──────────────────────────────────────
+  await supabaseAdmin()
     .from('conversations')
     .update({
       last_message_text: contentText || `[${message.type}]`,
@@ -442,46 +471,189 @@ async function processMessage(
     })
     .eq('id', conversation.id)
 
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
-
-  // If this contact was a recent broadcast recipient, flag the reply
-  // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
+  // ── 9. Broadcast reply tracking ──────────────────────────────────────────
   await flagBroadcastReplyIfAny(userId, contactRecord.id)
 
-  // Fire any automations that react to this webhook event. All dispatches
-  // run here (not earlier) so the contact, conversation, and inbound
-  // message all exist before any step — including send_message — runs.
-  // Fire-and-forget: a slow or failing automation must not block the
-  // webhook's 200 OK response to Meta.
-  const inboundText = contentText ?? message.text?.body ?? ''
+  // ── 10. Chatbot engine ───────────────────────────────────────────────────
+  // MUST be awaited — fire-and-forget is not tracked by after() so Vercel
+  // can kill the promise before it completes.
+  console.log(`[chatbot] Checking bots for user: ${userId.slice(-8)}`)
+  try {
+    await runChatbotsForContact({
+      userId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      message: { text: contentText ?? inboundText ?? undefined, type: message.type },
+    })
+    console.log('[chatbot] Bot check complete ✓')
+  } catch (err) {
+    console.error('[chatbot] Runner threw:', err instanceof Error ? err.message : err)
+  }
+
+  // ── 11. Automation engine ────────────────────────────────────────────────
+  const msgText = contentText ?? inboundText
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
     | 'new_message_received'
     | 'keyword_match'
   )[] = ['new_message_received', 'keyword_match']
-  // new_contact_created fires only when the webhook just auto-created the
-  // contact row. first_inbound_message fires whenever this is the contact's
-  // first-ever customer-sent message — a superset that also catches
-  // manually-imported contacts sending for the first time. We dispatch both
-  // so users can pick whichever semantic they want; an automation that
-  // listens to only one trigger runs only when that trigger matches.
   if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
   if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
-      userId,
-      triggerType,
-      contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
+
+  console.log(`[automation] Firing triggers for user: ${userId.slice(-8)} triggers=${automationTriggers.join(',')}`)
+  try {
+    await Promise.allSettled(
+      automationTriggers.map((triggerType) =>
+        runAutomationsForTrigger({
+          userId,
+          triggerType,
+          contactId: contactRecord.id,
+          context: { message_text: msgText, conversation_id: conversation.id },
+        }),
+      ),
+    )
+    console.log('[automation] All triggers dispatched ✓')
+  } catch (err) {
+    console.error('[automation] Dispatch threw:', err instanceof Error ? err.message : err)
   }
+
+  // ── 12. AI agent ─────────────────────────────────────────────────────────
+  console.log(`[ai-agent] Checking for active AI agent for user: ${userId.slice(-8)}`)
+  try {
+    await runAIAgentIfActive({
+      userId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      inboundText: msgText,
+      phoneNumberId: '', // resolved inside the function from DB config
+      accessToken,
+      contactPhone: senderPhone,
+    })
+  } catch (err) {
+    console.error('[ai-agent] Agent threw:', err instanceof Error ? err.message : err)
+  }
+}
+
+// ─── AI agent runner ─────────────────────────────────────────────────────────
+
+async function runAIAgentIfActive({
+  userId,
+  contactId,
+  conversationId,
+  inboundText,
+  accessToken,
+  contactPhone,
+}: {
+  userId: string
+  contactId: string
+  conversationId: string
+  inboundText: string
+  phoneNumberId: string
+  accessToken: string
+  contactPhone: string
+}) {
+  if (!inboundText.trim()) return // no text (image/audio) — skip
+
+  // 1. Fetch active AI agent config
+  const { data: agentRow } = await supabaseAdmin()
+    .from('ai_agents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!agentRow) {
+    console.log('[ai-agent] No active AI agent — skipping')
+    return
+  }
+  console.log(`[ai-agent] Active agent found: "${agentRow.agent_name}"`)
+
+  // 2. Get WhatsApp config for sending
+  const { data: waConfig } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('phone_number_id, access_token')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (!waConfig) return
+
+  let decryptedToken: string
+  try {
+    decryptedToken = decrypt(waConfig.access_token)
+  } catch {
+    console.error('[ai-agent] Failed to decrypt access_token')
+    return
+  }
+
+  // 3. Fetch recent conversation history for context (last 10 messages)
+  const { data: recentMsgs } = await supabaseAdmin()
+    .from('messages')
+    .select('sender_type, content_text')
+    .eq('conversation_id', conversationId)
+    .in('sender_type', ['customer', 'bot', 'agent'])
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  // Build message history for AI (oldest first, exclude current message — it's already at top)
+  const history = (recentMsgs ?? [])
+    .reverse()
+    .filter((m) => m.content_text)
+    .map((m) => ({
+      role: m.sender_type === 'customer' ? 'user' : 'assistant',
+      content: m.content_text as string,
+    })) as { role: 'user' | 'assistant'; content: string }[]
+
+  // 4. Call AI
+  let reply: string
+  try {
+    const { buildSystemPrompt, callAI } = await import('@/lib/ai/agent-utils')
+    const systemPrompt = buildSystemPrompt(agentRow, {
+      currentTime: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+    })
+    reply = await callAI(agentRow, systemPrompt, history)
+    console.log(`[ai-agent] Reply generated: "${reply.slice(0, 80)}"`)
+  } catch (err) {
+    console.error('[ai-agent] callAI failed:', err instanceof Error ? err.message : err)
+    return
+  }
+
+  if (!reply?.trim()) return
+
+  // 5. Send the reply via WhatsApp
+  try {
+    await (await import('@/lib/whatsapp/meta-api')).sendTextMessage({
+      phoneNumberId: waConfig.phone_number_id,
+      accessToken: decryptedToken,
+      to: contactPhone,
+      text: reply,
+    })
+    console.log('[ai-agent] Reply sent via WhatsApp ✓')
+  } catch (err) {
+    console.error('[ai-agent] Send failed:', err instanceof Error ? err.message : err)
+    return
+  }
+
+  // 6. Save bot message to DB so it appears in inbox
+  await supabaseAdmin().from('messages').insert({
+    conversation_id: conversationId,
+    sender_type: 'bot',
+    content_type: 'text',
+    content_text: reply,
+    status: 'sent',
+  })
+
+  // 7. Log to ai_agent_logs
+  await supabaseAdmin().from('ai_agent_logs').insert({
+    agent_id: agentRow.id,
+    user_id: userId,
+    contact_id: contactId,
+    conversation_id: conversationId,
+    user_message: inboundText,
+    agent_response: reply,
+    provider: agentRow.provider,
+    model: agentRow.model,
+    status: 'success',
+  }).catch(() => {}) // non-critical
 }
 
 async function parseMessageContent(
@@ -618,39 +790,58 @@ async function findOrCreateContact(
   phone: string,
   name: string
 ): Promise<ContactOutcome | null> {
-  // Look up existing contacts for this user
-  const { data: contacts, error: contactsError } = await supabaseAdmin()
+  // 1. Fast path: exact phone match (uses the idx_contacts_phone index).
+  const { data: exact, error: exactErr } = await supabaseAdmin()
     .from('contacts')
     .select('*')
     .eq('user_id', userId)
+    .eq('phone', phone)
+    .maybeSingle()
 
-  if (contactsError) {
-    console.error('Error fetching contacts:', contactsError)
+  if (exactErr) {
+    console.error('Error fetching contact (exact):', exactErr)
     return null
   }
 
-  // Use phonesMatch for flexible matching
-  const existingContact = contacts?.find((c: ContactRow) => phonesMatch(c.phone, phone))
-
-  if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
+  if (exact) {
+    if (name && name !== exact.name) {
       await supabaseAdmin()
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existingContact.id)
+        .eq('id', exact.id)
     }
-    return { contact: existingContact, wasCreated: false }
+    return { contact: exact, wasCreated: false }
   }
 
-  // Create new contact
+  // 2. Trunk-0 fallback: match by the last 8 digits so numbers stored
+  //    with/without a country-code trunk prefix still deduplicate.
+  //    We scope to a small candidate set via LIKE rather than loading
+  //    all contacts into JS.
+  if (phone.length >= 8) {
+    const suffix = phone.slice(-8)
+    const { data: candidates } = await supabaseAdmin()
+      .from('contacts')
+      .select('*')
+      .eq('user_id', userId)
+      .like('phone', `%${suffix}`)
+      .limit(5)
+
+    const match = candidates?.find((c: ContactRow) => phonesMatch(c.phone, phone))
+    if (match) {
+      if (name && name !== match.name) {
+        await supabaseAdmin()
+          .from('contacts')
+          .update({ name, updated_at: new Date().toISOString() })
+          .eq('id', match.id)
+      }
+      return { contact: match, wasCreated: false }
+    }
+  }
+
+  // 3. New contact
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
-    .insert({
-      user_id: userId,
-      phone,
-      name: name || phone,
-    })
+    .insert({ user_id: userId, phone, name: name || phone })
     .select()
     .single()
 
@@ -663,16 +854,25 @@ async function findOrCreateContact(
 }
 
 async function findOrCreateConversation(userId: string, contactId: string) {
-  // Look for existing conversation
-  const { data: existing, error: findError } = await supabaseAdmin()
+  // Use array + limit(1) instead of .single() so that if duplicate
+  // conversation rows somehow exist (race condition from a prior bug),
+  // we return the most-recent one rather than erroring and creating yet
+  // another orphan conversation.
+  const { data: rows, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('user_id', userId)
     .eq('contact_id', contactId)
-    .single()
+    .order('created_at', { ascending: false })
+    .limit(1)
 
-  if (!findError && existing) {
-    return existing
+  if (findError) {
+    console.error('Error fetching conversation:', findError)
+    return null
+  }
+
+  if (rows && rows.length > 0) {
+    return rows[0]
   }
 
   // Create new conversation

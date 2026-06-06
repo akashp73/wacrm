@@ -5,7 +5,9 @@ const REQUIRED_VARS = [
   'NEXT_PUBLIC_SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
   'ENCRYPTION_KEY',
-  'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+  // Required for webhook POST signature verification. If missing, every
+  // inbound WhatsApp message is rejected with 401 and silently dropped.
+  'META_APP_SECRET',
 ]
 
 export async function GET() {

@@ -2,28 +2,18 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { MessageSquare, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { GithubIcon } from './github-icon'
 
-/**
- * Landing-page top nav. Client component because we need to flip the
- * primary CTA depending on whether the visitor is already signed in.
- * "Auth pending" renders a placeholder (a pair of muted pill shapes)
- * so the CTA doesn't pop in jarringly after hydration.
- */
 type AuthState = 'pending' | 'signed-in' | 'signed-out'
 
 const LINKS = [
   { href: '#features', label: 'Features' },
   { href: '#how-it-works', label: 'How it works' },
-  { href: '#self-host', label: 'Self-host' },
-  { href: '/docs', label: 'Docs' },
+  { href: '#testimonials', label: 'Testimonials' },
   { href: '#faq', label: 'FAQ' },
 ]
-
-const REPO_URL = 'https://github.com/ArnasDon/wacrm'
 
 export function LandingNav() {
   const [auth, setAuth] = useState<AuthState>('pending')
@@ -31,16 +21,13 @@ export function LandingNav() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
-    // Quick auth check — no realtime needed, just the initial state.
     const supabase = createClient()
     let cancelled = false
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return
       setAuth(data.session?.user ? 'signed-in' : 'signed-out')
     })
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -53,54 +40,48 @@ export function LandingNav() {
   return (
     <header
       className={cn(
-        'sticky top-0 z-40 w-full border-b transition-colors',
+        'sticky top-0 z-40 w-full transition-all duration-200',
         scrolled
-          ? 'border-slate-800 bg-slate-950/80 backdrop-blur'
-          : 'border-transparent bg-transparent',
+          ? 'bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm'
+          : 'bg-white border-b border-gray-100',
       )}
     >
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
-        <Link
-          href="/"
-          className="flex items-center gap-2"
-          aria-label="CRM Template for WhatsApp home"
-        >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500">
-            <MessageSquare className="h-4 w-4 text-white" />
-          </span>
-          <span className="text-sm font-semibold text-white">
-            CRM Template for WhatsApp
-          </span>
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-3" aria-label="WACRM home">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-xl shadow-sm"
+            style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)' }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="h-5 w-5">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+            </svg>
+          </div>
+          <span className="text-lg font-bold text-gray-900 tracking-tight">WACRM</span>
         </Link>
 
+        {/* Desktop links */}
         <nav className="hidden items-center gap-8 md:flex">
           {LINKS.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className="text-sm text-slate-300 transition-colors hover:text-white"
+              className="text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
             >
               {l.label}
             </Link>
           ))}
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="View source on GitHub"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-          >
-            <GithubIcon className="h-4 w-4" />
-          </a>
+        {/* Desktop CTAs */}
+        <div className="hidden items-center gap-3 md:flex">
           <NavCtas auth={auth} />
         </div>
 
+        {/* Mobile hamburger */}
         <button
           type="button"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-800 hover:text-white md:hidden"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 md:hidden"
           aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
           onClick={() => setMobileOpen((v) => !v)}
         >
@@ -108,30 +89,21 @@ export function LandingNav() {
         </button>
       </div>
 
+      {/* Mobile menu */}
       {mobileOpen && (
-        <div className="border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden">
+        <div className="border-t border-gray-100 bg-white md:hidden">
           <div className="mx-auto flex max-w-7xl flex-col gap-1 px-6 py-4">
             {LINKS.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
                 onClick={() => setMobileOpen(false)}
-                className="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
+                className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
               >
                 {l.label}
               </Link>
             ))}
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
-            >
-              <GithubIcon className="h-4 w-4" />
-              GitHub
-            </a>
-            <div className="mt-2 flex flex-col gap-2 border-t border-slate-800 pt-3">
+            <div className="mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3">
               <NavCtas auth={auth} mobile />
             </div>
           </div>
@@ -142,49 +114,50 @@ export function LandingNav() {
 }
 
 function NavCtas({ auth, mobile = false }: { auth: AuthState; mobile?: boolean }) {
-  const btnBase =
-    'inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors'
-  const secondary = cn(
-    btnBase,
-    'text-slate-300 hover:bg-slate-800 hover:text-white',
-    mobile && 'justify-center',
-  )
-  const primary = cn(
-    btnBase,
-    'bg-violet-500 text-white hover:bg-violet-400',
-    mobile && 'justify-center',
-  )
-
   if (auth === 'pending') {
-    // Neutral placeholder that matches the eventual button sizes so
-    // nothing shifts once auth resolves.
     return (
       <>
-        <span className={cn(btnBase, 'w-20 bg-slate-800/60 text-transparent')}>·</span>
-        <span
-          className={cn(btnBase, 'w-28 bg-slate-800/60 text-transparent')}
-        >
-          ·
-        </span>
+        <span className="h-9 w-16 rounded-lg bg-gray-100 animate-pulse" />
+        <span className="h-9 w-24 rounded-lg bg-gray-100 animate-pulse" />
       </>
     )
   }
 
   if (auth === 'signed-in') {
     return (
-      <Link href="/dashboard" className={primary}>
-        Go to Dashboard
+      <Link
+        href="/dashboard"
+        className={cn(
+          'inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90',
+          mobile && 'w-full',
+        )}
+        style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)' }}
+      >
+        Go to Dashboard →
       </Link>
     )
   }
 
   return (
     <>
-      <Link href="/login" className={secondary}>
-        Sign in
+      <Link
+        href="/login"
+        className={cn(
+          'inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50',
+          mobile && 'w-full justify-center',
+        )}
+      >
+        Login
       </Link>
-      <Link href="/signup" className={primary}>
-        Get started
+      <Link
+        href="/signup"
+        className={cn(
+          'inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:opacity-90',
+          mobile && 'w-full justify-center',
+        )}
+        style={{ background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)' }}
+      >
+        Start Free
       </Link>
     </>
   )

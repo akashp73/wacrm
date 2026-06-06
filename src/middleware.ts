@@ -25,10 +25,10 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Root → send authenticated users to dashboard, others to login
-  if (request.nextUrl.pathname === '/') {
+  // Root → authenticated users go to dashboard; unauthenticated users see the landing page
+  if (request.nextUrl.pathname === '/' && user) {
     const url = request.nextUrl.clone()
-    url.pathname = user ? '/dashboard' : '/login'
+    url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 

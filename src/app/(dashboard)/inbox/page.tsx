@@ -118,7 +118,26 @@ export default function InboxPage() {
       const conv = event.new;
 
       if (event.eventType === "INSERT") {
-        setConversations((prev) => [conv, ...prev]);
+        // Realtime postgres_changes only sends the bare row — no joins.
+        // Optimistically add it so the conversation appears immediately,
+        // then replace with the contact-joined version so the name renders
+        // correctly instead of showing "Unknown" until a page refresh.
+        setConversations((prev) => {
+          if (prev.some((c) => c.id === conv.id)) return prev;
+          return [conv, ...prev];
+        });
+        createClient()
+          .from("conversations")
+          .select("*, contact:contacts(*)")
+          .eq("id", conv.id)
+          .single()
+          .then(({ data: fullConv }) => {
+            if (fullConv) {
+              setConversations((prev) =>
+                prev.map((c) => (c.id === fullConv.id ? fullConv : c))
+              );
+            }
+          });
       }
 
       if (event.eventType === "UPDATE") {

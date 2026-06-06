@@ -53,6 +53,7 @@ export function WhatsAppConfig() {
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
+  const [verifyTokenEdited, setVerifyTokenEdited] = useState(false);
 
   const webhookUrl =
     typeof window !== 'undefined'
@@ -78,8 +79,9 @@ export function WhatsAppConfig() {
         setPhoneNumberId(data.phone_number_id || '');
         setWabaId(data.waba_id || '');
         setAccessToken(MASKED_TOKEN);
-        setVerifyToken('');
+        setVerifyToken(data.verify_token ? MASKED_TOKEN : '');
         setTokenEdited(false);
+        setVerifyTokenEdited(false);
       } else {
         setConfig(null);
         setPhoneNumberId('');
@@ -87,6 +89,7 @@ export function WhatsAppConfig() {
         setAccessToken('');
         setVerifyToken('');
         setTokenEdited(false);
+        setVerifyTokenEdited(false);
       }
 
       // Then verify health via the API (decrypts token + pings Meta)
@@ -150,8 +153,13 @@ export function WhatsAppConfig() {
       const payload: Record<string, unknown> = {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
-        verify_token: verifyToken.trim() || null,
       };
+
+      // Only include verify_token if the user actually changed it.
+      // Omitting it tells the server to leave the existing encrypted value alone.
+      if (verifyTokenEdited) {
+        payload.verify_token = verifyToken.trim() || null;
+      }
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
         payload.access_token = accessToken.trim();
@@ -246,6 +254,7 @@ export function WhatsAppConfig() {
       setAccessToken('');
       setVerifyToken('');
       setTokenEdited(false);
+      setVerifyTokenEdited(false);
       setConnectionStatus('disconnected');
       setResetReason(null);
       setStatusMessage('');
@@ -399,12 +408,28 @@ export function WhatsAppConfig() {
               <Input
                 placeholder="Create a custom verify token"
                 value={verifyToken}
-                onChange={(e) => setVerifyToken(e.target.value)}
+                onChange={(e) => {
+                  const newVal = e.target.value;
+                  // On first edit the field still contains the mask — strip all
+                  // bullet chars so the user only sees what they typed.
+                  if (verifyToken === MASKED_TOKEN) {
+                    setVerifyToken(newVal.replace(/•/g, ''));
+                  } else {
+                    setVerifyToken(newVal);
+                  }
+                  setVerifyTokenEdited(true);
+                }}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
-              <p className="text-xs text-muted-foreground">
-                A custom string you create. Must match the token you set in Meta webhook settings.
-              </p>
+              {config?.verify_token && !verifyTokenEdited ? (
+                <p className="text-xs text-muted-foreground">
+                  Token is hidden for security. Click the field to replace it.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  A custom string you create. Must match the token you set in Meta webhook settings.
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

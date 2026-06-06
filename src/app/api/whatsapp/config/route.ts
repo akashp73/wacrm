@@ -161,12 +161,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Encrypt sensitive tokens before storing
+    // Encrypt sensitive tokens before storing.
+    // verify_token is only encrypted (and later updated) when the client
+    // explicitly sent it — omitting it from the payload preserves whatever
+    // is already encrypted in the DB row.
+    const verifyTokenProvided = 'verify_token' in body
     let encryptedAccessToken: string
-    let encryptedVerifyToken: string | null
+    let encryptedVerifyToken: string | null = null
     try {
       encryptedAccessToken = encrypt(access_token)
-      encryptedVerifyToken = verify_token ? encrypt(verify_token) : null
+      if (verifyTokenProvided) {
+        encryptedVerifyToken = verify_token ? encrypt(verify_token) : null
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown encryption error'
       console.error('Encryption failed:', message)
@@ -184,17 +190,21 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (existing) {
+      const updateFields: Record<string, unknown> = {
+        phone_number_id,
+        waba_id: waba_id || null,
+        access_token: encryptedAccessToken,
+        status: 'connected',
+        connected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      if (verifyTokenProvided) {
+        updateFields.verify_token = encryptedVerifyToken
+      }
+
       const { error: updateError } = await supabase
         .from('whatsapp_config')
-        .update({
-          phone_number_id,
-          waba_id: waba_id || null,
-          access_token: encryptedAccessToken,
-          verify_token: encryptedVerifyToken,
-          status: 'connected',
-          connected_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateFields)
         .eq('user_id', user.id)
 
       if (updateError) {

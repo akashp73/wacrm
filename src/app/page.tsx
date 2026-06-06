@@ -5,8 +5,8 @@ import { Hero } from '@/components/landing/hero'
 import { FeaturesGrid } from '@/components/landing/features-grid'
 import { HowItWorks } from '@/components/landing/how-it-works'
 import { FeatureSpotlight } from '@/components/landing/feature-spotlight'
+import { Testimonials } from '@/components/landing/testimonials'
 import { FAQ } from '@/components/landing/faq'
-import { OpenSource } from '@/components/landing/open-source'
 import { CtaBanner } from '@/components/landing/cta-banner'
 import { Footer } from '@/components/landing/footer'
 import { InboxMock } from '@/components/landing/mock/inbox-mock'
@@ -17,28 +17,15 @@ import { JsonLd } from '@/components/seo/json-ld'
 import { landingPageLd } from '@/lib/seo/structured-data'
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from '@/lib/seo/site-config'
 
-// Landing-specific metadata. Most fields are inherited from the root
-// layout's metadata — we override title (so the hero copy shows in
-// SERPs / tab titles) and set an explicit canonical for "/" to avoid
-// trailing-slash duplicate-content signals.
 export const metadata: Metadata = {
-  title: {
-    absolute: `${SITE_NAME} — ${SITE_TAGLINE}`,
-  },
+  title: { absolute: `${SITE_NAME} — ${SITE_TAGLINE}` },
   description: SITE_DESCRIPTION,
-  alternates: {
-    canonical: '/',
-  },
+  alternates: { canonical: '/' },
 }
 
-// Marketing landing. Visible at / for everyone (auth redirect that
-// used to send anonymous visitors to /login was removed). Authed users
-// still see this page; the nav swaps its CTA to "Go to Dashboard".
 export default function LandingPage() {
   return (
-    <div className="bg-slate-950 text-slate-100">
-      {/* JSON-LD — WebSite, Organization, SoftwareApplication, FAQPage.
-          Emitted before any visible content so crawlers hit it first. */}
+    <div className="bg-white text-gray-900">
       <JsonLd data={landingPageLd()} />
       <LandingNav />
       <main>
@@ -49,13 +36,13 @@ export default function LandingPage() {
         <FeatureSpotlight
           anchorId="inbox"
           eyebrow="Shared inbox"
-          title="Never drop a WhatsApp conversation again"
-          body="Your whole team works from one inbox. Conversations can be assigned, tagged, and handed off without losing context. Real-time updates so two agents never reply to the same thread at the same time."
+          title="Never miss a WhatsApp conversation again"
+          body="Your whole team works from one inbox. Assign conversations, reply together, and hand off threads without losing context. Real-time updates so two agents never reply to the same message."
           bullets={[
-            'Assign threads to specific agents or round-robin across the team',
-            'Internal notes that only your team sees',
-            'Unread indicators so urgent replies never slip through',
-            'Deep-link into any conversation from the dashboard',
+            'Assign conversations to specific agents or auto-distribute',
+            'Internal notes only your team can see',
+            'Unread badges so urgent replies never get buried',
+            'One-click deep link into any conversation from the dashboard',
           ]}
           visual={<InboxMock />}
         />
@@ -64,14 +51,14 @@ export default function LandingPage() {
 
         <FeatureSpotlight
           anchorId="automations"
-          eyebrow="No-code automations"
-          title="Automate the repetitive, focus on the humans"
-          body="Build flows that react to WhatsApp events: welcome new contacts, chase unanswered replies, route leads by keyword. Conditions, waits, tags, deals — all with a visual builder that feels like Figma for workflows."
+          eyebrow="Smart automation"
+          title="Automate follow-ups, focus on what matters"
+          body="Build workflows that run automatically — welcome new contacts, reply to keywords, chase unread messages, and move deals forward. No code, no developers needed."
           bullets={[
-            'Triggers for new messages, new contacts, tag changes, keywords, schedules',
-            'Actions: send message / template, add tag, create deal, webhook, and more',
-            'Conditional branches and wait steps for human-time delays',
-            'Per-run logs so you always know what ran and why',
+            'Trigger on new messages, keywords, tags, schedules, and more',
+            'Send messages, templates, add tags, create deals, fire webhooks',
+            'Conditional branches for personalised flows',
+            'Full run logs so you always know what happened and why',
           ]}
           reverse
           visual={<AutomationMock />}
@@ -80,12 +67,12 @@ export default function LandingPage() {
         <FeatureSpotlight
           anchorId="pipelines"
           eyebrow="Sales pipelines"
-          title="Turn conversations into revenue"
-          body="Drag deals through custom stages, link them to contacts, and see exactly where revenue is getting stuck. Every deal keeps its WhatsApp thread one click away — so context never gets lost on a handoff."
+          title="Turn WhatsApp chats into closed deals"
+          body="Drag deals through custom stages, link them to contacts, and see exactly where revenue is getting stuck. Every deal keeps its WhatsApp conversation one click away."
           bullets={[
-            'Unlimited pipelines and stages',
-            'Kanban board with drag-and-drop',
-            'Deal value totals per stage and pipeline-wide',
+            'Unlimited pipelines and custom stages',
+            'Kanban drag-and-drop board',
+            'Deal value totals per stage',
             'Linked contacts, conversations, and notes per deal',
           ]}
           visual={<PipelineMock />}
@@ -94,19 +81,19 @@ export default function LandingPage() {
         <FeatureSpotlight
           anchorId="analytics"
           eyebrow="Real-time analytics"
-          title="See what is actually working"
-          body="Response times, daily volume, pipeline value, and a cross-module activity feed. The dashboard tells you where attention is needed without you building a single chart."
+          title="See exactly what is working"
+          body="Response times, daily volume, pipeline value, campaign performance, and an activity feed across every module. The dashboard surfaces what needs attention without you having to build a single chart."
           bullets={[
-            'Active conversations, new contacts, open deal value — live',
-            'Conversations over time for 7, 30, or 90 days',
-            'Average first-response time by weekday against your target',
-            'Activity feed merged across messages, deals, broadcasts, automations',
+            'Live conversation counts, new contacts, and open deal value',
+            'Message volume over 7, 30, or 90 days',
+            'Average first-response time vs. your target',
+            'Activity feed across messages, deals, broadcasts, automations',
           ]}
           reverse
           visual={<AnalyticsMock />}
         />
 
-        <OpenSource />
+        <Testimonials />
 
         <FAQ />
 
