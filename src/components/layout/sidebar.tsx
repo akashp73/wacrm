@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -9,8 +10,8 @@ import { useTotalUnread } from "@/hooks/use-total-unread";
 import type { WorkspaceRole } from "@/types";
 import {
   Home, MessageSquare, Users, Send, LayoutTemplate,
-  GitBranch, Zap, ListOrdered, Bot, Workflow,
-  BarChart2, Settings,
+  GitBranch, Zap, ListOrdered, Bot, Workflow, Cpu,
+  BarChart2, Settings, Map,
   LayoutGrid, ChevronRight, LogOut, Plus, X,
 } from "lucide-react";
 
@@ -49,6 +50,7 @@ const NAV: NavSection[] = [
       { href: "/pipelines",   label: "Pipelines",   icon: GitBranch,   minRole: "admin" },
       { href: "/automations", label: "Automations", icon: Zap,         minRole: "admin" },
       { href: "/chatbots",    label: "Chatbots",    icon: Workflow,    minRole: "admin" },
+      { href: "/bot-studio",  label: "Bot Studio",  icon: Cpu,         minRole: "admin" },
       { href: "/drip",        label: "Drip",        icon: ListOrdered, minRole: "admin" },
       { href: "/ai-agent",    label: "AI Agent",    icon: Bot,         minRole: "admin" },
     ],
@@ -56,6 +58,7 @@ const NAV: NavSection[] = [
   {
     label: "CONFIGURE",
     items: [
+      { href: "/planning", label: "Planning", icon: Map,       minRole: "admin" },
       { href: "/reports",  label: "Reports",  icon: BarChart2, minRole: "admin" },
       { href: "/settings", label: "Settings", icon: Settings,  minRole: "admin" },
     ],
@@ -210,11 +213,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             aria-label={collapsed ? "Expand sidebar" : undefined}
             type="button"
           >
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground">
-              <MessageSquare className="h-3.5 w-3.5 text-background" />
-            </div>
+            <Image src="/logo-mark.png" alt="" width={24} height={24} className="h-6 w-6 shrink-0" />
             {!collapsed && (
-              <span className="text-[14px] font-bold text-foreground truncate">WACRM</span>
+              <span className="text-[14px] font-bold text-foreground truncate">Sensytick</span>
             )}
           </button>
 

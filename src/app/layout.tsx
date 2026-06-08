@@ -69,9 +69,6 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
-  icons: {
-    icon: [{ url: "/icon" }],
-  },
   formatDetection: {
     email: false,
     address: false,
@@ -98,7 +95,7 @@ export default function RootLayout({
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
-          storageKey="wacrm-ui-theme"
+          storageKey="sensytick-ui-theme"
           disableTransitionOnChange
         >
           {children}

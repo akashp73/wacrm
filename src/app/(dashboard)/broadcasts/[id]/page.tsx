@@ -196,6 +196,26 @@ export default function BroadcastDetailPage() {
     [recipients, statusFilter],
   );
 
+  // Derive analytics directly from broadcast_recipients rows — the
+  // sent/delivered/read timestamps and status/error_message columns are
+  // the source of truth, so we count off them rather than the
+  // aggregate columns on `broadcasts` (which can drift/lag behind).
+  const stats = useMemo(() => {
+    let sent = 0;
+    let delivered = 0;
+    let read = 0;
+    let replied = 0;
+    let failed = 0;
+    for (const r of recipients) {
+      if (r.sent_at) sent++;
+      if (r.delivered_at) delivered++;
+      if (r.read_at) read++;
+      if (r.status === 'replied') replied++;
+      if (r.status === 'failed' || r.error_message) failed++;
+    }
+    return { sent, delivered, read, replied, failed };
+  }, [recipients]);
+
   function handleExport() {
     if (!broadcast) return;
     const header = [
@@ -265,10 +285,10 @@ export default function BroadcastDetailPage() {
   const status = getBroadcastStatus(broadcast.status);
 
   const funnelSteps: FunnelStep[] = [
-    { label: 'Sent', value: broadcast.sent_count, color: 'bg-foreground' },
-    { label: 'Delivered', value: broadcast.delivered_count, color: 'bg-teal-500' },
-    { label: 'Read', value: broadcast.read_count, color: 'bg-blue-500' },
-    { label: 'Replied', value: broadcast.replied_count, color: 'bg-indigo-500' },
+    { label: 'Sent', value: stats.sent, color: 'bg-foreground' },
+    { label: 'Delivered', value: stats.delivered, color: 'bg-teal-500' },
+    { label: 'Read', value: stats.read, color: 'bg-blue-500' },
+    { label: 'Replied', value: stats.replied, color: 'bg-indigo-500' },
   ];
 
   return (
@@ -358,35 +378,35 @@ export default function BroadcastDetailPage() {
         />
         <StatCard
           label="Sent"
-          value={broadcast.sent_count}
+          value={stats.sent}
           total={broadcast.total_recipients}
           icon={<Send className="h-4 w-4" />}
           color="bg-foreground/10 text-foreground"
         />
         <StatCard
           label="Delivered"
-          value={broadcast.delivered_count}
+          value={stats.delivered}
           total={broadcast.total_recipients}
           icon={<CheckCheck className="h-4 w-4" />}
           color="bg-teal-500/10 text-teal-400"
         />
         <StatCard
           label="Read"
-          value={broadcast.read_count}
+          value={stats.read}
           total={broadcast.total_recipients}
           icon={<Eye className="h-4 w-4" />}
           color="bg-blue-500/10 text-blue-400"
         />
         <StatCard
           label="Replied"
-          value={broadcast.replied_count}
+          value={stats.replied}
           total={broadcast.total_recipients}
           icon={<MessageCircle className="h-4 w-4" />}
           color="bg-indigo-500/10 text-indigo-400"
         />
         <StatCard
           label="Failed"
-          value={broadcast.failed_count}
+          value={stats.failed}
           total={broadcast.total_recipients}
           icon={<AlertCircle className="h-4 w-4" />}
           color="bg-red-500/10 text-red-400"

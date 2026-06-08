@@ -54,9 +54,16 @@ function RateCell({
   );
 }
 
+interface RecipientStats {
+  delivered: number;
+  read: number;
+  total: number;
+}
+
 export default function BroadcastsPage() {
   const router = useRouter();
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
+  const [recipientStats, setRecipientStats] = useState<Record<string, RecipientStats>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +80,29 @@ export default function BroadcastsPage() {
 
       if (fetchError) throw fetchError;
       setBroadcasts(data ?? []);
+
+      // Aggregate delivered/read counts straight from broadcast_recipients
+      // — the broadcasts.*_count columns are maintained by a trigger that
+      // can be stale for older campaigns, so we derive live numbers here.
+      const ids = (data ?? []).map((b) => b.id);
+      if (ids.length > 0) {
+        const { data: recipients } = await supabase
+          .from('broadcast_recipients')
+          .select('broadcast_id, delivered_at, read_at')
+          .in('broadcast_id', ids);
+
+        const stats: Record<string, RecipientStats> = {};
+        for (const r of recipients ?? []) {
+          const entry = stats[r.broadcast_id] ?? { delivered: 0, read: 0, total: 0 };
+          entry.total += 1;
+          if (r.delivered_at) entry.delivered += 1;
+          if (r.read_at) entry.read += 1;
+          stats[r.broadcast_id] = entry;
+        }
+        setRecipientStats(stats);
+      } else {
+        setRecipientStats({});
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load broadcasts');
     } finally {
@@ -224,6 +254,8 @@ export default function BroadcastsPage() {
             <TableBody>
               {broadcasts.map((broadcast) => {
                 const status = getBroadcastStatus(broadcast.status);
+                const stats = recipientStats[broadcast.id];
+                const recipientTotal = stats?.total || broadcast.total_recipients;
                 return (
                   <TableRow
                     key={broadcast.id}
@@ -241,15 +273,15 @@ export default function BroadcastsPage() {
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <RateCell
-                        value={broadcast.delivered_count}
-                        total={broadcast.total_recipients}
+                        value={stats?.delivered ?? broadcast.delivered_count}
+                        total={recipientTotal}
                         color="bg-foreground"
                       />
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
                       <RateCell
-                        value={broadcast.read_count}
-                        total={broadcast.total_recipients}
+                        value={stats?.read ?? broadcast.read_count}
+                        total={recipientTotal}
                         color="bg-blue-500"
                       />
                     </TableCell>

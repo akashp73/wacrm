@@ -106,6 +106,104 @@ export async function sendTextMessage(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendMediaMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  mediaType: 'image' | 'video' | 'document'
+  url: string
+  caption?: string
+}
+
+/**
+ * Send an image, video, or document by public URL (Meta fetches and
+ * hosts it). `caption` is ignored for documents without a filename.
+ */
+export async function sendMediaMessage(
+  args: SendMediaMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, mediaType, url, caption } = args
+  const apiUrl = `${META_API_BASE}/${phoneNumberId}/messages`
+
+  const media: Record<string, unknown> = { link: url }
+  if (caption) media.caption = caption
+
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: mediaType,
+      [mediaType]: media,
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendInteractiveListMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  body: string
+  buttonText: string
+  items: Array<{ id: string; title: string; description?: string }>
+}
+
+/**
+ * Send an interactive "list message" — a button that opens a
+ * single-section picker of up to 10 rows.
+ */
+export async function sendInteractiveListMessage(
+  args: SendInteractiveListMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, body, buttonText, items } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: body },
+        action: {
+          button: buttonText,
+          sections: [
+            {
+              rows: items.slice(0, 10).map((item) => ({
+                id: item.id,
+                title: item.title.slice(0, 24),
+                ...(item.description ? { description: item.description.slice(0, 72) } : {}),
+              })),
+            },
+          ],
+        },
+      },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 export interface SendTemplateMessageArgs {
   phoneNumberId: string
   accessToken: string

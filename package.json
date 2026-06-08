@@ -1,11 +1,11 @@
 {
-  "name": "wacrm",
+  "name": "sensytick",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
+  "description": "Sensytick — a CRM for WhatsApp built on Next.js and Supabase: shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
   "license": "MIT",
   "author": "Arnas Donauskas",
-  "homepage": "https://wacrm.tech",
+  "homepage": "https://sensytick.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ArnasDon/wacrm.git"
@@ -42,6 +42,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@google/generative-ai": "^0.24.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.3",

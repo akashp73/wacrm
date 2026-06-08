@@ -15,7 +15,18 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
 import type { MessageTemplate } from '@/types';
+
+// Accept filters + size limits per header media type — mirrors the
+// `template-media` storage bucket config in migration 016.
+const HEADER_MEDIA_ACCEPT: Record<string, string> = {
+  image: 'image/png,image/jpeg,image/webp',
+  video: 'video/mp4,video/3gpp',
+  document: 'application/pdf',
+};
+const HEADER_MEDIA_MAX_BYTES = 16 * 1024 * 1024; // 16 MB
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -206,8 +217,12 @@ const EMPTY: TemplateFormState = {
 
 export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: TemplateBuilderProps) {
   const router = useRouter();
+  const supabase = createClient();
+  const { user } = useAuth();
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+  const [headerSampleFile, setHeaderSampleFile] = useState<File | null>(null);
 
   const [form, setForm] = useState<TemplateFormState>(() => {
     if (!initialTemplate) return EMPTY;
@@ -274,6 +289,38 @@ export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: Te
     setForm((prev) => ({ ...prev, buttons: prev.buttons.filter((b) => b.id !== id) }));
   };
 
+  // Sample media for header (image/video/document)
+  const onPickHeaderSample = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    if (file.size > HEADER_MEDIA_MAX_BYTES) {
+      toast.error('File is too large — max 16 MB');
+      return;
+    }
+    setHeaderSampleFile(file);
+  };
+
+  const removeHeaderSample = () => setHeaderSampleFile(null);
+
+  // Uploads the staged sample file to the `template-media` bucket and
+  // returns its public URL, or null if nothing is staged.
+  const uploadHeaderSample = useCallback(async (): Promise<string | null> => {
+    if (!headerSampleFile || !user) return null;
+    const ext = headerSampleFile.name.split('.').pop()?.toLowerCase() || 'bin';
+    const path = `${user.id}/${Date.now()}-sample.${ext}`;
+    const { error } = await supabase.storage
+      .from('template-media')
+      .upload(path, headerSampleFile, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: headerSampleFile.type,
+      });
+    if (error) throw new Error(`Sample upload failed: ${error.message}`);
+    const { data: { publicUrl } } = supabase.storage.from('template-media').getPublicUrl(path);
+    return publicUrl;
+  }, [headerSampleFile, user, supabase]);
+
   // Submit
   const handleSubmit = async () => {
     if (!form.name.trim())   { toast.error('Template name is required'); return; }
@@ -284,6 +331,11 @@ export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: Te
     }
     setSaving(true);
     try {
+      let headerMediaUrl: string | undefined;
+      if (['image', 'video', 'document'].includes(form.headerType) && headerSampleFile) {
+        headerMediaUrl = (await uploadHeaderSample()) ?? undefined;
+      }
+
       const payload = {
         id: initialTemplate?.id,
         name: form.name.trim(),
@@ -291,6 +343,7 @@ export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: Te
         language: form.language,
         header_type: form.headerType,
         header_text: form.headerType === 'text' ? form.headerText : undefined,
+        header_media_url: headerMediaUrl,
         body_text: form.body.trim(),
         footer_text: form.footer.trim() || undefined,
         buttons: form.buttons.map(({ id: _id, ...rest }) => rest),
@@ -308,8 +361,8 @@ export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: Te
       }
       toast.success('Template submitted to Meta for review');
       router.push(backHref);
-    } catch {
-      toast.error('Network error — please try again');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Network error — please try again');
     } finally {
       setSaving(false);
     }
@@ -429,12 +482,55 @@ export function TemplateBuilder({ initialTemplate, backHref = '/templates' }: Te
 
             {['image', 'video', 'document'].includes(form.headerType) && (
               <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border bg-muted/40 py-8 text-center">
-                <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
-                <p className="text-[13px] text-muted-foreground font-medium">Upload sample media for Meta review</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">This is optional — used for template approval</p>
-                <button className="mt-3 rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-muted transition-colors">
-                  Choose file
-                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={HEADER_MEDIA_ACCEPT[form.headerType]}
+                  onChange={onPickHeaderSample}
+                  className="hidden"
+                />
+                {headerSampleFile ? (
+                  <>
+                    <CheckCheck className="h-8 w-8 text-emerald-500 mb-2" />
+                    <p className="text-[13px] text-foreground font-medium truncate max-w-xs">{headerSampleFile.name}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {(headerSampleFile.size / 1024 / 1024).toFixed(2)} MB — ready to upload on submit
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-muted transition-colors"
+                      >
+                        Replace file
+                      </button>
+                      <button
+                        type="button"
+                        onClick={removeHeaderSample}
+                        className="rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-destructive hover:bg-red-50 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-[13px] text-muted-foreground font-medium">Upload sample media for Meta review</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {form.headerType === 'image' && 'PNG, JPEG or WebP — used for template approval'}
+                      {form.headerType === 'video' && 'MP4 or 3GP — used for template approval'}
+                      {form.headerType === 'document' && 'PDF — used for template approval'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="mt-3 rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      Choose file
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

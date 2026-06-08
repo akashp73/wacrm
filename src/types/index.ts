@@ -393,3 +393,23 @@ export interface AutomationLog {
   created_at: string;
   contact?: Contact;
 }
+
+// ─── Planning ────────────────────────────────────────────────
+
+export interface PlanStep {
+  name: string;
+  date: string;
+}
+
+export interface Plan {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string | null;
+  execution_date: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  canvas_data: any;
+  steps: PlanStep[];
+  created_at: string;
+  updated_at: string;
+}

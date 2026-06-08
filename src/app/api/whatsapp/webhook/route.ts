@@ -10,6 +10,7 @@ import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { runChatbotsForContact } from '@/lib/chatbot/runner'
+import { runMessageReceivedBots } from '@/lib/bot-studio/runner'
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +59,12 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        errors?: Array<{
+          code?: number
+          title?: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -289,6 +296,12 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status.
@@ -327,6 +340,10 @@ async function handleStatusUpdate(status: {
   if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
   if (status.status === 'delivered') update.delivered_at = tsIso
   if (status.status === 'read') update.read_at = tsIso
+  if (status.status === 'failed' && status.errors?.length) {
+    const err = status.errors[0]
+    update.error_message = err.message || err.title || err.error_data?.details || `Error ${err.code ?? ''}`.trim()
+  }
 
   const { error: recUpdateErr } = await supabaseAdmin()
     .from('broadcast_recipients')
@@ -482,6 +499,19 @@ async function processMessage(
     console.log('[chatbot] Bot check complete ✓')
   } catch (err) {
     console.error('[chatbot] Runner threw:', err instanceof Error ? err.message : err)
+  }
+
+  // ── 10b. Bot Studio — message_received trigger ───────────────────────────
+  console.log(`[bot-studio] Checking message_received bots for user: ${userId.slice(-8)}`)
+  try {
+    await runMessageReceivedBots({
+      userId,
+      phone: senderPhone,
+      message: { text: contentText ?? inboundText ?? undefined, type: message.type },
+    })
+    console.log('[bot-studio] Bot check complete ✓')
+  } catch (err) {
+    console.error('[bot-studio] Runner threw:', err instanceof Error ? err.message : err)
   }
 
   // ── 11. Automation engine ────────────────────────────────────────────────

@@ -21,7 +21,7 @@ const TESTIMONIALS: Testimonial[] = [
     rating: 5,
     industry: 'E-Commerce',
     metric: '3x more conversions',
-    text: 'We went from missing 40% of customer messages to responding to every single one within minutes. WACRM completely changed how we handle customer queries on WhatsApp. Our sales conversions tripled in just two months.',
+    text: 'We went from missing 40% of customer messages to responding to every single one within minutes. Sensytick completely changed how we handle customer queries on WhatsApp. Our sales conversions tripled in just two months.',
   },
   {
     name: 'Priya Mehta',
@@ -41,7 +41,7 @@ const TESTIMONIALS: Testimonial[] = [
     rating: 5,
     industry: 'Real Estate',
     metric: '12 agents, one inbox',
-    text: 'We tried three other WhatsApp CRM tools before WACRM. Nothing came close. The pipeline view — seeing every deal linked to its WhatsApp thread — is a game changer. Our 12 agents work from one shared inbox with zero confusion.',
+    text: 'We tried three other WhatsApp CRM tools before Sensytick. Nothing came close. The pipeline view — seeing every deal linked to its WhatsApp thread — is a game changer. Our 12 agents work from one shared inbox with zero confusion.',
   },
   {
     name: 'Sneha Nair',
@@ -61,7 +61,7 @@ const TESTIMONIALS: Testimonial[] = [
     rating: 5,
     industry: 'Logistics',
     metric: '47 min → 4 min response',
-    text: 'Customer service was chaos before WACRM — 8 agents across 3 phones. Now everything is in one inbox, conversations get auto-assigned, and our average response time dropped from 47 minutes to under 4 minutes.',
+    text: 'Customer service was chaos before Sensytick — 8 agents across 3 phones. Now everything is in one inbox, conversations get auto-assigned, and our average response time dropped from 47 minutes to under 4 minutes.',
   },
   {
     name: 'Anjali Gupta',
@@ -110,7 +110,7 @@ export function Testimonials() {
       <SectionHeader
         eyebrow="Customer stories"
         title="Real businesses, real results"
-        description="Thousands of companies across India use WACRM every day to manage conversations, run campaigns, and grow faster on WhatsApp."
+        description="Thousands of companies across India use Sensytick every day to manage conversations, run campaigns, and grow faster on WhatsApp."
       />
 
       {/* Summary bar */}

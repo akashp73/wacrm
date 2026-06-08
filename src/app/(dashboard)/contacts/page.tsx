@@ -19,8 +19,17 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +50,8 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Tag as TagIcon,
+  TagsIcon,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -65,6 +76,16 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   // True when the user clicked "Select all N contacts" (across all pages)
   const [selectingAll, setSelectingAll] = useState(false);
+
+  // Tag filter (multi-select) — shows contacts matching ANY selected tag
+  const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
+
+  // Delete by tag
+  const [deleteByTagOpen, setDeleteByTagOpen] = useState(false);
+  const [deleteByTagId, setDeleteByTagId] = useState<string>('');
+  const [deleteByTagCount, setDeleteByTagCount] = useState<number | null>(null);
+  const [deleteByTagCounting, setDeleteByTagCounting] = useState(false);
+  const [deleteByTagDeleting, setDeleteByTagDeleting] = useState(false);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -109,11 +130,31 @@ export default function ContactsPage() {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
+    // When tags are selected, first resolve which contacts carry any of them
+    let tagMatchIds: string[] | null = null;
+    if (selectedTagIds.size > 0) {
+      const { data: ctRows } = await supabase
+        .from('contact_tags')
+        .select('contact_id')
+        .in('tag_id', Array.from(selectedTagIds));
+      tagMatchIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
+      if (tagMatchIds.length === 0) {
+        setContacts([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+    }
+
     let query = supabase
       .from('contacts')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to);
+
+    if (tagMatchIds) {
+      query = query.in('id', tagMatchIds);
+    }
 
     if (search.trim()) {
       const term = `%${search.trim()}%`;
@@ -155,7 +196,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, tagsMap]);
+  }, [supabase, page, search, selectedTagIds, tagsMap]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -167,11 +208,27 @@ export default function ContactsPage() {
     fetchContacts();
   }, [fetchContacts]);
 
-  // Clear selection when page or search changes
+  // Clear selection when page, search, or tag filter changes
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectingAll(false);
-  }, [page, search]);
+  }, [page, search, selectedTagIds]);
+
+  // Reset to page 0 when the tag filter changes
+  useEffect(() => {
+    setPage(0);
+  }, [selectedTagIds]);
+
+  function toggleTagFilter(tagId: string) {
+    setSelectedTagIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) next.delete(tagId);
+      else next.add(tagId);
+      return next;
+    });
+  }
+
+  const allTags = Object.values(tagsMap).sort((a, b) => a.name.localeCompare(b.name));
 
   // ── Selection handlers ────────────────────────────────────────────
   function toggleOne(id: string, e: React.MouseEvent | React.ChangeEvent) {
@@ -282,6 +339,55 @@ export default function ContactsPage() {
     }
   }
 
+  // ── Delete by tag ─────────────────────────────────────────────────
+  function openDeleteByTag() {
+    setDeleteByTagId('');
+    setDeleteByTagCount(null);
+    setDeleteByTagOpen(true);
+  }
+
+  async function handleDeleteByTagPick(tagId: string) {
+    setDeleteByTagId(tagId);
+    setDeleteByTagCount(null);
+    setDeleteByTagCounting(true);
+    const { count } = await supabase
+      .from('contact_tags')
+      .select('contact_id', { count: 'exact', head: true })
+      .eq('tag_id', tagId);
+    setDeleteByTagCount(count ?? 0);
+    setDeleteByTagCounting(false);
+  }
+
+  async function handleDeleteByTag() {
+    if (!deleteByTagId) return;
+    setDeleteByTagDeleting(true);
+    try {
+      const { data: ctRows, error: ctError } = await supabase
+        .from('contact_tags')
+        .select('contact_id')
+        .eq('tag_id', deleteByTagId);
+      if (ctError) throw ctError;
+
+      const ids = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
+      if (ids.length > 0) {
+        const { error } = await supabase.from('contacts').delete().in('id', ids);
+        if (error) throw error;
+      }
+
+      toast.success(`${ids.length} contact${ids.length !== 1 ? 's' : ''} deleted`);
+      setDeleteByTagOpen(false);
+      setDeleteByTagId('');
+      setDeleteByTagCount(null);
+      clearSelection();
+      setPage(0);
+      fetchContacts();
+    } catch {
+      toast.error('Failed to delete contacts');
+    } finally {
+      setDeleteByTagDeleting(false);
+    }
+  }
+
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const hasNext = page < totalPages - 1;
   const hasPrev = page > 0;
@@ -300,6 +406,15 @@ export default function ContactsPage() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            onClick={openDeleteByTag}
+            disabled={allTags.length === 0}
+            className="border-border text-foreground/70 hover:bg-muted"
+          >
+            <TagsIcon className="size-4" />
+            Delete by Tag
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => setImportOpen(true)}
             className="border-border text-foreground/70 hover:bg-muted"
           >
@@ -316,18 +431,92 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(0);
-          }}
-          placeholder="Search by name, phone, or email..."
-          className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
-        />
+      {/* Search + tag filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Search by name, phone, or email..."
+            className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+          />
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="outline"
+                className="border-border text-foreground/70 hover:bg-muted"
+              />
+            }
+          >
+            <TagIcon className="size-4" />
+            Filter by tag
+            {selectedTagIds.size > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center rounded-full bg-foreground text-background text-[10px] font-medium size-4">
+                {selectedTagIds.size}
+              </span>
+            )}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="bg-card border-border min-w-48">
+            {allTags.length === 0 ? (
+              <DropdownMenuLabel>No tags yet</DropdownMenuLabel>
+            ) : (
+              allTags.map((tag) => (
+                <DropdownMenuCheckboxItem
+                  key={tag.id}
+                  checked={selectedTagIds.has(tag.id)}
+                  closeOnClick={false}
+                  onCheckedChange={() => toggleTagFilter(tag.id)}
+                  className="text-foreground/70 focus:bg-muted focus:text-foreground"
+                >
+                  <span
+                    className="inline-block size-2 rounded-full"
+                    style={{ backgroundColor: tag.color }}
+                  />
+                  {tag.name}
+                </DropdownMenuCheckboxItem>
+              ))
+            )}
+            {selectedTagIds.size > 0 && (
+              <>
+                <DropdownMenuSeparator className="bg-muted" />
+                <DropdownMenuItem
+                  onClick={() => setSelectedTagIds(new Set())}
+                  className="text-foreground/70 focus:bg-muted focus:text-foreground"
+                >
+                  <X className="size-4" />
+                  Clear filter
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {selectedTagIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {Array.from(selectedTagIds).map((tagId) => {
+              const tag = tagsMap[tagId];
+              if (!tag) return null;
+              return (
+                <button
+                  key={tagId}
+                  onClick={() => toggleTagFilter(tagId)}
+                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-opacity hover:opacity-70"
+                  style={{ backgroundColor: tag.color + '20', color: tag.color }}
+                >
+                  {tag.name}
+                  <X className="size-3" />
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Bulk action bar — visible only when contacts are selected */}
@@ -686,6 +875,80 @@ export default function ContactsPage() {
             >
               {bulkDeleting && <Loader2 className="size-4 animate-spin" />}
               Delete {selectionCount}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete by tag */}
+      <Dialog open={deleteByTagOpen} onOpenChange={setDeleteByTagOpen}>
+        <DialogContent className="bg-card border-border text-foreground sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Delete Contacts by Tag</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Pick a tag to permanently delete every contact carrying it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Select
+              value={deleteByTagId}
+              onValueChange={(v) => handleDeleteByTagPick(v as string)}
+            >
+              <SelectTrigger className="w-full bg-card border-border text-foreground">
+                <SelectValue placeholder="Select a tag..." />
+              </SelectTrigger>
+              <SelectContent className="bg-card border-border">
+                {allTags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id} className="text-foreground/70">
+                    <span
+                      className="inline-block size-2 rounded-full"
+                      style={{ backgroundColor: tag.color }}
+                    />
+                    {tag.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {deleteByTagId && (
+              <p className="text-sm text-muted-foreground">
+                {deleteByTagCounting ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="size-3.5 animate-spin" /> Counting matching contacts...
+                  </span>
+                ) : (
+                  <>
+                    This will permanently delete{' '}
+                    <span className="text-foreground font-medium">
+                      {deleteByTagCount ?? 0} contact{(deleteByTagCount ?? 0) !== 1 ? 's' : ''}
+                    </span>{' '}
+                    tagged{' '}
+                    <span className="text-foreground font-medium">
+                      "{tagsMap[deleteByTagId]?.name}"
+                    </span>
+                    . Their conversations and messages will remain. This action cannot be undone.
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="bg-card border-border">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteByTagOpen(false)}
+              className="border-border text-foreground/70 hover:bg-muted"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteByTag}
+              disabled={!deleteByTagId || deleteByTagCounting || deleteByTagDeleting || (deleteByTagCount ?? 0) === 0}
+            >
+              {deleteByTagDeleting && <Loader2 className="size-4 animate-spin" />}
+              Delete{deleteByTagCount != null ? ` ${deleteByTagCount}` : ''}
             </Button>
           </DialogFooter>
         </DialogContent>

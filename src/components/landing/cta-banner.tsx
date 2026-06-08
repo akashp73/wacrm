@@ -38,7 +38,7 @@ export function CtaBanner() {
             Ready to grow with WhatsApp?
           </h2>
           <p className="relative mx-auto mt-4 max-w-xl text-base text-green-50 sm:text-lg">
-            Join 10,000+ businesses using WACRM to send campaigns, automate
+            Join 10,000+ businesses using Sensytick to send campaigns, automate
             replies, and close more deals — all from one inbox.
           </p>
 

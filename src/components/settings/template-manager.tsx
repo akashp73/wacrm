@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Loader2, RefreshCw, Pencil } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, Pencil, Search } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -14,6 +14,7 @@ import {
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { MessageTemplate } from '@/types';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -52,6 +53,7 @@ export function TemplateManager() {
   const { user, ownerId, loading: authLoading } = useAuth();
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
@@ -104,6 +106,12 @@ export function TemplateManager() {
     setDeleting(false);
   }
 
+  const filteredTemplates = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return templates;
+    return templates.filter((t) => t.name.toLowerCase().includes(term));
+  }, [templates, search]);
+
   if (loading) return (
     <div className="flex items-center justify-center py-16">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -134,6 +142,16 @@ export function TemplateManager() {
         </div>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search templates by name..."
+          className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+        />
+      </div>
+
       {templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card py-16 text-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted mb-3">
@@ -151,6 +169,16 @@ export function TemplateManager() {
             New template
           </Link>
         </div>
+      ) : filteredTemplates.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card py-16 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted mb-3">
+            <Search className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <p className="text-[14px] font-semibold text-foreground">No templates found</p>
+          <p className="text-[13px] text-muted-foreground mt-1 max-w-xs">
+            No templates match &quot;{search}&quot;. Try a different search term.
+          </p>
+        </div>
       ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <Table>
@@ -165,7 +193,7 @@ export function TemplateManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {templates.map((t) => (
+              {filteredTemplates.map((t) => (
                 <TableRow key={t.id}>
                   <TableCell><span className="font-medium text-foreground">{t.name}</span></TableCell>
                   <TableCell><CategoryBadge category={t.category} /></TableCell>

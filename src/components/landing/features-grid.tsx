@@ -103,7 +103,7 @@ export function FeaturesGrid() {
       <SectionHeader
         eyebrow="Everything you need"
         title="One platform for your entire WhatsApp business"
-        description="Stop stitching together a broadcast tool, an inbox, and a spreadsheet. WACRM gives you everything — and it all works together out of the box."
+        description="Stop stitching together a broadcast tool, an inbox, and a spreadsheet. Sensytick gives you everything — and it all works together out of the box."
       />
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

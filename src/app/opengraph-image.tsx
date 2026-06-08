@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og'
-import { SITE_NAME, SITE_TAGLINE } from '@/lib/seo/site-config'
+import { SITE_NAME, SITE_TAGLINE, absoluteUrl } from '@/lib/seo/site-config'
 
 /**
  * Auto-generated OG image served at /opengraph-image.
@@ -44,22 +44,7 @@ export default async function Image() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 14,
-              background: '#7c3aed',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontSize: 34,
-              fontWeight: 700,
-            }}
-          >
-            W
-          </div>
+          <img src={absoluteUrl('/logo-mark.png')} width={64} height={64} alt="" />
           <div style={{ display: 'flex', fontSize: 36, fontWeight: 700, letterSpacing: -0.5 }}>
             {SITE_NAME}
           </div>
