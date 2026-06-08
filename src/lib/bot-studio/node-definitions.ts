@@ -80,7 +80,19 @@ export const NODE_DEFS: Record<ActionType, NodeDef> = {
 
 export const TRIGGER_LABELS: Record<TriggerType, string> = {
   message_received: 'Message Received',
-  webhook: 'Webhook',
+  webhook: 'On Webhook',
+}
+
+/** Reads a dot-path (e.g. "data.phone" or "contact.number") out of an arbitrary JSON object. */
+export function getByPath(obj: unknown, path: string): unknown {
+  const trimmed = path.trim()
+  if (!trimmed) return undefined
+  return trimmed.split('.').reduce<unknown>((acc, key) => {
+    if (acc && typeof acc === 'object' && key in (acc as Record<string, unknown>)) {
+      return (acc as Record<string, unknown>)[key]
+    }
+    return undefined
+  }, obj)
 }
 
 export function getPreview(type: string, cfg: Record<string, unknown>): string {
@@ -90,10 +102,11 @@ export function getPreview(type: string, cfg: Record<string, unknown>): string {
     case 'send_interactive_list': return (cfg.body as string)?.slice(0, 60) || 'List message'
     case 'send_media':            return (cfg.url as string)?.slice(0, 50) || 'No media URL set'
     case 'condition': {
-      const field = (cfg.field as string) || 'message text'
+      const field = (cfg.field as string) || 'message_text'
+      const fieldLabel = field === 'webhook_field' ? ((cfg.field_path as string) || 'webhook field') : field
       const op = (cfg.operator as string) || 'contains'
       const value = (cfg.value as string) || '?'
-      return `If ${field} ${op} "${value}"`
+      return `If ${fieldLabel} ${op} "${value}"`
     }
     case 'delay':                 return `Wait ${cfg.duration ?? 1} ${cfg.unit ?? 'minutes'}`
     case 'goto':                  return (cfg.target_label as string) ? `→ ${cfg.target_label}` : 'Select a step'
@@ -107,5 +120,6 @@ export function getTriggerPreview(cfg: Record<string, unknown>): string {
     const keyword = cfg.keyword as string | undefined
     return keyword ? `"${keyword}"` : 'Any message'
   }
-  return 'POST /api/bot-studio/webhook/…'
+  const phoneField = cfg.phone_field as string | undefined
+  return phoneField ? `Phone field: ${phoneField}` : 'POST /api/bot-studio/webhook/…'
 }

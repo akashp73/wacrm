@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
-import { NODE_DEFS, TRIGGER_LABELS, type ActionType, type TriggerType } from '@/lib/bot-studio/node-definitions';
+import { NODE_DEFS, TRIGGER_LABELS, getByPath, type ActionType, type TriggerType } from '@/lib/bot-studio/node-definitions';
 
 export interface MessageTemplateOption {
   id: string;
@@ -58,6 +58,28 @@ export function ConfigPanel({
     });
   };
 
+  // ── Capture Response (webhook trigger) ──
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [capture, setCapture] = useState<{ payload: unknown; at: string | null } | null>(null);
+  const [captureLoading, setCaptureLoading] = useState(false);
+
+  const loadCapture = () => {
+    setCaptureLoading(true);
+    fetch(`/api/bot-studio/${botId}`)
+      .then(res => res.json())
+      .then(data => {
+        const bot = (data?.bot ?? {}) as Record<string, unknown>;
+        setCapture({ payload: bot.last_webhook_payload ?? null, at: (bot.last_webhook_at as string) ?? null });
+      })
+      .catch(() => setCapture(null))
+      .finally(() => setCaptureLoading(false));
+  };
+
+  const openCapture = () => {
+    setCaptureOpen(true);
+    loadCapture();
+  };
+
   const title = kind === 'trigger'
     ? TRIGGER_LABELS[nodeType as TriggerType] ?? 'Trigger'
     : NODE_DEFS[nodeType as ActionType]?.label ?? nodeType;
@@ -102,7 +124,7 @@ export function ConfigPanel({
 
         {kind === 'trigger' && nodeType === 'webhook' && (
           <>
-            <Field label="Webhook URL" hint="Send a POST request with a JSON body containing a `phone` field to trigger this bot.">
+            <Field label="Webhook URL" hint="POST a JSON body to this URL to trigger the bot.">
               <div className="flex items-center gap-1.5">
                 <input readOnly value={webhookUrl} className={inputCls + " font-mono text-[11px]"} />
                 <button onClick={copyWebhookUrl}
@@ -111,13 +133,77 @@ export function ConfigPanel({
                 </button>
               </div>
             </Field>
+
+            <Field label="Select phone number field" hint='Dot-path to the phone number inside the webhook JSON body, e.g. "data.phone" or "contact.number"'>
+              <input
+                value={(config.phone_field as string) ?? ''}
+                onChange={e => set({ phone_field: e.target.value })}
+                placeholder="e.g. data.phone"
+                className={inputCls + " font-mono"}
+              />
+              {Boolean((config.phone_field as string)?.trim()) && capture?.payload != null && (
+                <p className="text-[10px] text-gray-400">
+                  Extracted from last payload:{' '}
+                  <span className="font-mono text-gray-600">
+                    {String(getByPath(capture.payload, config.phone_field as string) ?? '— not found —')}
+                  </span>
+                </p>
+              )}
+            </Field>
+
+            <div>
+              <button onClick={openCapture}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-[12px] font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                Capture Response
+              </button>
+              <p className="mt-1 text-[10px] text-gray-400">Send a test POST request to the webhook URL above, then click here to inspect the last payload received.</p>
+            </div>
+
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
               <p className="text-[11px] font-medium text-gray-600 mb-1">Example request</p>
               <pre className="text-[10px] text-gray-500 font-mono whitespace-pre-wrap leading-relaxed">{`POST ${webhookUrl}
 Content-Type: application/json
 
-{ "phone": "15551234567" }`}</pre>
+{ "data": { "phone": "15551234567" } }`}</pre>
             </div>
+
+            {captureOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-6" onClick={() => setCaptureOpen(false)}>
+                <div className="w-full max-w-md rounded-xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+                    <p className="text-[13px] font-semibold text-gray-900">Last captured payload</p>
+                    <button onClick={() => setCaptureOpen(false)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto px-4 py-3 space-y-2">
+                    {captureLoading && <p className="text-[12px] text-gray-400">Loading…</p>}
+                    {!captureLoading && capture?.payload == null && (
+                      <p className="text-[12px] text-gray-400">No payload captured yet. Send a test POST request to the webhook URL, then click Refresh.</p>
+                    )}
+                    {!captureLoading && capture?.payload != null && (
+                      <>
+                        {capture.at && <p className="text-[10px] text-gray-400">Received {new Date(capture.at).toLocaleString()}</p>}
+                        <pre className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5 text-[11px] text-gray-700 font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                          {JSON.stringify(capture.payload, null, 2)}
+                        </pre>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-4 py-3">
+                    <button onClick={loadCapture} disabled={captureLoading}
+                      className="rounded-lg border border-gray-200 px-3.5 py-1.5 text-[12px] font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+                      Refresh
+                    </button>
+                    <button onClick={() => setCaptureOpen(false)}
+                      className="rounded-lg bg-gray-900 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-gray-700 transition-colors">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -278,8 +364,19 @@ Content-Type: application/json
                 <option value="message_text">Message text</option>
                 <option value="contact_tag">Contact tag</option>
                 <option value="contact_name">Contact name</option>
+                <option value="webhook_field">Webhook payload field</option>
               </select>
             </Field>
+            {(config.field as string) === 'webhook_field' && (
+              <Field label="Field path" hint='Dot-path into the webhook JSON body, e.g. "data.status" or "order.total"'>
+                <input
+                  value={(config.field_path as string) ?? ''}
+                  onChange={e => set({ field_path: e.target.value })}
+                  placeholder="e.g. data.status"
+                  className={inputCls + " font-mono"}
+                />
+              </Field>
+            )}
             <Field label="Operator">
               <select
                 value={(config.operator as string) ?? 'contains'}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 export const TRIGGER_ITEMS = [
   { id: 'message_received', label: 'Message Received', icon: '💬', desc: 'Incoming WhatsApp message matches keyword/any' },
-  { id: 'webhook',          label: 'Webhook',           icon: '🔗', desc: 'External POST hits the bot webhook URL' },
+  { id: 'webhook',          label: 'On Webhook',        icon: '🔗', desc: 'External system POSTs JSON to a generated URL to trigger this bot' },
 ];
 
 export const ACTION_GROUPS = [

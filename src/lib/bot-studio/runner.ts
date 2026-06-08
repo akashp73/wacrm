@@ -15,6 +15,7 @@ import {
   sendTextMessage, sendTemplateMessage, sendMediaMessage, sendInteractiveListMessage,
 } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { getByPath } from '@/lib/bot-studio/node-definitions'
 
 export interface BotMessage {
   text?: string
@@ -81,10 +82,13 @@ export async function executeBotForPhone({
   bot,
   phone,
   message,
+  payload,
 }: {
   bot: BotRow
   phone: string
   message?: BotMessage
+  /** Raw JSON body of the triggering webhook request — available to Condition nodes via the "Webhook payload field" option. */
+  payload?: Record<string, unknown>
 }): Promise<void> {
   const admin = supabaseAdmin()
   const log: LogEntry[] = []
@@ -127,6 +131,7 @@ export async function executeBotForPhone({
       to: phone,
       contact: contact ?? null,
       message: message ?? {},
+      payload: payload ?? null,
       log,
     }
 
@@ -174,6 +179,8 @@ interface ExecContext {
   to: string
   contact: ContactRow | null
   message: BotMessage
+  /** Raw JSON body of the triggering webhook request, when the bot was triggered via its webhook URL. */
+  payload: Record<string, unknown> | null
   log: LogEntry[]
 }
 
@@ -243,6 +250,11 @@ function evaluateCondition(ctx: ExecContext, cfg: Record<string, unknown>): bool
   if (field === 'message_text') subject = (ctx.message.text ?? '').toLowerCase()
   else if (field === 'contact_name') subject = (ctx.contact?.name ?? '').toLowerCase()
   else if (field === 'contact_tag') subject = (ctx.contact?.tags ?? []).join(',').toLowerCase()
+  else if (field === 'webhook_field') {
+    const path = (cfg.field_path as string) ?? ''
+    const value = ctx.payload && path ? getByPath(ctx.payload, path) : undefined
+    subject = (value == null ? '' : String(value)).toLowerCase()
+  }
 
   switch (operator) {
     case 'equals':      return subject === rawValue
