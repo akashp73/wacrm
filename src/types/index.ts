@@ -68,6 +68,7 @@ export interface Conversation {
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
+  last_message_source?: MessageSource;
   unread_count: number;
   created_at: string;
   updated_at: string;
@@ -77,6 +78,8 @@ export interface Conversation {
 export type SenderType = 'customer' | 'agent' | 'bot';
 export type ContentType = 'text' | 'image' | 'document' | 'audio' | 'video' | 'location' | 'template';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
+export type MessageSource = 'manual' | 'automation' | 'drip' | 'ai_agent' | 'broadcast' | 'bot_studio';
 
 export interface Message {
   id: string;
@@ -89,6 +92,7 @@ export interface Message {
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
+  source?: MessageSource;
   created_at: string;
 }
 

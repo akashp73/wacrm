@@ -27,18 +27,17 @@ export async function GET() {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  // Build enriched user list (only users with profiles = workspace owners)
+  // Build enriched user list — all auth users, profile data where available
   const users = authUsers
-    .filter(u => profileMap.has(u.id))
     .map(u => {
-      const profile = profileMap.get(u.id)!
+      const profile = profileMap.get(u.id)
       const sub     = subMap.get(u.id)
       const wa      = waMap.get(u.id)
       const isBanned = !!u.banned_until && new Date(u.banned_until) > new Date()
       return {
         id:           u.id,
-        email:        u.email ?? profile.email,
-        full_name:    profile.full_name,
+        email:        u.email ?? profile?.email,
+        full_name:    profile?.full_name ?? null,
         created_at:   u.created_at,
         last_sign_in: u.last_sign_in_at,
         is_new:       u.created_at >= sevenDaysAgo,

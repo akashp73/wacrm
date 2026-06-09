@@ -38,13 +38,24 @@ export async function POST(request: Request, { params }: Params) {
 
   const { data: bot, error } = await admin
     .from('bots')
-    .select('id, user_id, status, trigger, nodes, edges')
+    .select('id, user_id, status, trigger, nodes, edges, last_webhook_payload, last_webhook_at')
     .eq('id', botId)
     .maybeSingle()
 
   if (error || !bot) {
     console.log(`[bot-studio webhook] bot ${botId} not found`)
     return NextResponse.json({ received: true, skipped: 'bot_not_found' })
+  }
+
+  // Deduplication: skip if same payload arrived within the last 10 seconds
+  const nowMs = Date.now()
+  const lastMs = bot.last_webhook_at ? new Date(bot.last_webhook_at as string).getTime() : 0
+  if (
+    nowMs - lastMs < 10_000 &&
+    JSON.stringify(body) === JSON.stringify(bot.last_webhook_payload)
+  ) {
+    console.log(`[bot-studio webhook] bot ${botId} skipped — duplicate payload within 10s`)
+    return NextResponse.json({ received: true, skipped: 'duplicate' })
   }
 
   // Always capture the payload first — even if execution is skipped below.

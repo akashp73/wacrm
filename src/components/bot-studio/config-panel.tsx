@@ -276,7 +276,7 @@ Content-Type: application/json
               if (!tpl || varCount === 0) return null;
               const vars = (config.variables ?? {}) as Record<string, string>;
               return (
-                <Field label="Template variables" hint="Map each {{n}} placeholder to a value or {{contact.name}}">
+                <Field label="Template variables" hint="Type the exact key from your webhook payload">
                   <div className="space-y-2">
                     {Array.from({ length: varCount }, (_, i) => String(i + 1)).map(n => (
                       <div key={n} className="flex items-center gap-2">
@@ -284,7 +284,7 @@ Content-Type: application/json
                         <input
                           value={vars[n] ?? ''}
                           onChange={e => set({ variables: { ...vars, [n]: e.target.value } })}
-                          placeholder="{{contact.name}}"
+                          placeholder="payload key (e.g. name, number, link)"
                           className={inputCls}
                         />
                       </div>

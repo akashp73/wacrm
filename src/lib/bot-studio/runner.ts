@@ -117,18 +117,57 @@ export async function executeBotForPhone({
       return
     }
 
-    const { data: contact } = await admin
-      .from('contacts')
-      .select('id, name, phone, tags')
-      .eq('user_id', bot.user_id)
-      .eq('phone', phone)
-      .maybeSingle()
+    // Find or create contact
+    let contact: ContactRow | null = null
+    {
+      const { data: existing } = await admin
+        .from('contacts')
+        .select('id, name, phone, tags')
+        .eq('user_id', bot.user_id)
+        .eq('phone', phone)
+        .maybeSingle()
+      if (existing) {
+        contact = existing
+      } else {
+        const { data: created } = await admin
+          .from('contacts')
+          .insert({ user_id: bot.user_id, phone, name: phone })
+          .select('id, name, phone, tags')
+          .single()
+        contact = created ?? null
+      }
+    }
+
+    // Find or create conversation
+    let convId: string | null = null
+    if (contact?.id) {
+      const { data: existing } = await admin
+        .from('conversations')
+        .select('id')
+        .eq('user_id', bot.user_id)
+        .eq('contact_id', contact.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (existing) {
+        convId = existing.id
+      } else {
+        const { data: created } = await admin
+          .from('conversations')
+          .insert({ user_id: bot.user_id, contact_id: contact.id, status: 'open' })
+          .select('id')
+          .single()
+        convId = created?.id ?? null
+      }
+    }
 
     const ctx: ExecContext = {
       admin,
       phoneNumberId: config.phone_number_id,
       accessToken,
       to: phone,
+      userId: bot.user_id,
+      conversationId: convId,
       contact: contact ?? null,
       message: message ?? {},
       payload: payload ?? null,
@@ -177,6 +216,8 @@ interface ExecContext {
   phoneNumberId: string
   accessToken: string
   to: string
+  userId: string
+  conversationId: string | null
   contact: ContactRow | null
   message: BotMessage
   /** Raw JSON body of the triggering webhook request, when the bot was triggered via its webhook URL. */
@@ -188,6 +229,20 @@ function interpolate(text: string, ctx: ExecContext): string {
   return text
     .replace(/\{\{contact\.name\}\}/gi, ctx.contact?.name ?? '')
     .replace(/\{\{contact\.phone\}\}/gi, ctx.contact?.phone ?? ctx.to)
+}
+
+function resolveValue(mappingValue: string, ctx: ExecContext): string {
+  if (!mappingValue) return ''
+  const payload = ctx.payload ?? {}
+  const ciKey = (k: string) => Object.keys(payload).find(pk => pk.toLowerCase() === k.toLowerCase())
+  const match = mappingValue.match(/^\{\{(.+?)\}\}$/)
+  if (match) {
+    const key = match[1]
+    const val = payload[key] ?? payload[ciKey(key) ?? '']
+    return val != null ? String(val) : ''
+  }
+  const val = payload[mappingValue] ?? payload[ciKey(mappingValue) ?? '']
+  return val != null ? String(val) : mappingValue
 }
 
 async function walkFlow(ctx: ExecContext, nodes: BotNode[], edges: BotEdge[], startNode: BotNode) {
@@ -272,8 +327,25 @@ async function runSendMessage(ctx: ExecContext, nodeId: string, cfg: Record<stri
   }
   const interpolated = interpolate(text, ctx)
   try {
-    await sendTextMessage({ phoneNumberId: ctx.phoneNumberId, accessToken: ctx.accessToken, to: ctx.to, text: interpolated })
+    const result = await sendTextMessage({ phoneNumberId: ctx.phoneNumberId, accessToken: ctx.accessToken, to: ctx.to, text: interpolated })
     ctx.log.push({ node_id: nodeId, node_type: 'send_message', status: 'ok', detail: interpolated.slice(0, 80) })
+    if (ctx.conversationId) {
+      await ctx.admin.from('messages').insert({
+        conversation_id: ctx.conversationId,
+        sender_type: 'bot',
+        content_type: 'text',
+        content_text: interpolated,
+        message_id: result?.messageId ?? null,
+        status: 'sent',
+        source: 'bot_studio',
+      })
+      await ctx.admin.from('conversations').update({
+        last_message_text: interpolated,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_message_source: 'bot_studio',
+      }).eq('id', ctx.conversationId)
+    }
   } catch (err) {
     ctx.log.push({ node_id: nodeId, node_type: 'send_message', status: 'error', detail: err instanceof Error ? err.message : String(err) })
   }
@@ -288,13 +360,33 @@ async function runSendTemplate(ctx: ExecContext, nodeId: string, cfg: Record<str
   const variables = (cfg.variables ?? {}) as Record<string, string>
   const params = Object.keys(variables)
     .sort((a, b) => Number(a) - Number(b))
-    .map(k => interpolate(variables[k] ?? '', ctx))
+    .map(k => resolveValue(variables[k] ?? '', ctx))
+  console.log(`[bot-studio runner] send_template "${name}" resolved params:`, params)
+  // WhatsApp rejects empty parameter values — replace with single space as fallback
+  const safeParams = params.map(p => p.trim() === '' ? ' ' : p)
   try {
-    await sendTemplateMessage({
+    const result = await sendTemplateMessage({
       phoneNumberId: ctx.phoneNumberId, accessToken: ctx.accessToken, to: ctx.to,
-      templateName: name, language: (cfg.language as string) ?? 'en_US', params,
+      templateName: name, language: (cfg.language as string) ?? 'en_US', params: safeParams,
     })
     ctx.log.push({ node_id: nodeId, node_type: 'send_template', status: 'ok', detail: name })
+    if (ctx.conversationId) {
+      await ctx.admin.from('messages').insert({
+        conversation_id: ctx.conversationId,
+        sender_type: 'bot',
+        content_type: 'template',
+        template_name: name,
+        message_id: result?.messageId ?? null,
+        status: 'sent',
+        source: 'bot_studio',
+      })
+      await ctx.admin.from('conversations').update({
+        last_message_text: `[template:${name}]`,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_message_source: 'bot_studio',
+      }).eq('id', ctx.conversationId)
+    }
   } catch (err) {
     ctx.log.push({ node_id: nodeId, node_type: 'send_template', status: 'error', detail: err instanceof Error ? err.message : String(err) })
   }

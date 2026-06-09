@@ -664,6 +664,7 @@ async function runAIAgentIfActive({
     content_type: 'text',
     content_text: reply,
     status: 'sent',
+    source: 'ai_agent',
   })
 
   // 7. Log to ai_agent_logs

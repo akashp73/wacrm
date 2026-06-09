@@ -214,13 +214,30 @@ function MessageContent({ message }: { message: Message }) {
   }
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  automation: "⚡ Automation",
+  drip:       "💧 Drip",
+  ai_agent:   "✨ AI Agent",
+  broadcast:  "📢 Broadcast",
+  bot_studio: "🤖 Bot Studio",
+};
+
+function SourceBadge({ source }: { source?: string | null }) {
+  if (!source || source === "manual" || !SOURCE_LABELS[source]) return null;
+  return (
+    <p className="mt-0.5 text-right text-xs italic text-gray-400">
+      {SOURCE_LABELS[source]}
+    </p>
+  );
+}
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
 
   return (
     <div
-      className={cn("flex w-full", isAgent ? "justify-end" : "justify-start")}
+      className={cn("flex w-full flex-col", isAgent ? "items-end" : "items-start")}
     >
       <div
         className={cn(
@@ -241,6 +258,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {isAgent && <StatusIcon status={message.status} />}
         </div>
       </div>
+      {isAgent && <SourceBadge source={message.source} />}
     </div>
   );
 }

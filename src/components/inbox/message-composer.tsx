@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AISuggestions } from "./ai-suggestions";
+import { createClient } from "@/lib/supabase/client";
 import type { Message } from "@/types";
 
 interface MessageComposerProps {
@@ -12,6 +13,7 @@ interface MessageComposerProps {
   sessionExpired: boolean;
   onSend: (text: string) => void;
   onOpenTemplates: () => void;
+  onSendMedia?: (url: string, type: "image" | "video" | "document", caption?: string) => void;
   messages?: Message[];
   contactName?: string;
 }
@@ -21,12 +23,15 @@ export function MessageComposer({
   sessionExpired,
   onSend,
   onOpenTemplates,
+  onSendMedia,
   messages = [],
   contactName,
 }: MessageComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -78,6 +83,52 @@ export function MessageComposer({
     }, 0);
   }, [adjustHeight]);
 
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !onSendMedia) return;
+
+      // Reset so the same file can be re-selected
+      e.target.value = "";
+
+      const mimeToType = (mime: string): "image" | "video" | "document" | null => {
+        if (mime.startsWith("image/")) return "image";
+        if (mime.startsWith("video/")) return "video";
+        if (mime === "application/pdf") return "document";
+        return null;
+      };
+
+      const mediaType = mimeToType(file.type);
+      if (!mediaType) return;
+
+      setUploading(true);
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const path = `${user.id}/inbox/${Date.now()}-${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("template-media")
+          .upload(path, file);
+
+        if (uploadError) {
+          console.error("Upload failed:", uploadError);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("template-media")
+          .getPublicUrl(path);
+
+        onSendMedia(urlData.publicUrl, mediaType, undefined);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [onSendMedia]
+  );
+
   return (
     <div className="border-t border-border bg-card">
       {/* AI suggestions strip */}
@@ -115,6 +166,32 @@ export function MessageComposer({
         >
           <LayoutTemplate className="h-4 w-4" />
         </Button>
+
+        {onSendMedia && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,video/mp4,video/3gpp,application/pdf"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || sessionExpired}
+              title="Send file"
+            >
+              {uploading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+              ) : (
+                <Paperclip className="h-4 w-4" />
+              )}
+            </Button>
+          </>
+        )}
 
         <textarea
           ref={textareaRef}

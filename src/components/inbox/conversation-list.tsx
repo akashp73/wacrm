@@ -272,9 +272,21 @@ function ConversationItem({
           <span className="shrink-0 text-[11px] text-muted-foreground dark:text-muted-foreground">{timeAgo}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-[12px] text-muted-foreground dark:text-muted-foreground">
-            {conversation.last_message_text || "No messages yet"}
-          </p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {conversation.last_message_source && conversation.last_message_source !== "manual" && (
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-muted-foreground">
+                {conversation.last_message_source === "bot_studio" ? "🤖"
+                  : conversation.last_message_source === "automation" ? "⚡"
+                  : conversation.last_message_source === "drip" ? "💧"
+                  : conversation.last_message_source === "ai_agent" ? "✨"
+                  : conversation.last_message_source === "broadcast" ? "📢"
+                  : null}
+              </span>
+            )}
+            <p className="truncate text-[12px] text-muted-foreground dark:text-muted-foreground">
+              {conversation.last_message_text || "No messages yet"}
+            </p>
+          </div>
           {conversation.unread_count > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground px-1 text-[11px] font-semibold text-white">
               {conversation.unread_count > 99 ? "99+" : conversation.unread_count}

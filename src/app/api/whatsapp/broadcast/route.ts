@@ -180,6 +180,41 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+        // Save to inbox — look up contact + conversation for this phone
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('user_id', user.id)
+          .or(`phone.eq.${sanitized},phone.eq.${recipient.phone}`)
+          .limit(1)
+          .maybeSingle()
+        if (contact?.id) {
+          const { data: conv } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('contact_id', contact.id)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (conv?.id) {
+            await supabase.from('messages').insert({
+              conversation_id: conv.id,
+              sender_type: 'bot',
+              content_type: 'template',
+              template_name,
+              message_id: sentMessageId,
+              status: 'sent',
+              source: 'broadcast',
+            })
+            await supabase.from('conversations').update({
+              last_message_text: `[template:${template_name}]`,
+              last_message_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              last_message_source: 'broadcast',
+            }).eq('id', conv.id)
+          }
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,

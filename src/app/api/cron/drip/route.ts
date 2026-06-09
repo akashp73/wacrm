@@ -137,11 +137,13 @@ export async function GET(request: Request) {
             template_name: sentTemplate,
             message_id: waResult.messageId,
             status: 'sent',
+            source: 'drip',
           })
           await admin.from('conversations').update({
             last_message_text: lastText,
             last_message_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            last_message_source: 'drip',
           }).eq('id', conv.id)
         }
       }

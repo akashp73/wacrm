@@ -17,14 +17,15 @@ export async function PremiumGate({ feature, children }: PremiumGateProps) {
   // Superadmin always has access
   if (user?.email === process.env.SUPERADMIN_EMAIL) return <>{children}</>
 
-  // Check subscription
+  // Check subscription — fail open if subscriptions table doesn't exist yet (migration not run)
   let isPremium = false
   if (user) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('subscriptions')
       .select('plan, status')
       .eq('user_id', user.id)
       .maybeSingle()
+    if (error?.code === '42P01') return <>{children}</> // table doesn't exist → allow access
     isPremium = data?.plan === 'premium' && data?.status === 'active'
   }
 
