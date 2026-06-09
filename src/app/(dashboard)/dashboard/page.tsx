@@ -181,6 +181,23 @@ function RemindersSection({ reminders }: { reminders: PlanReminder[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────
 
+function FreePlanBanner() {
+  const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/subscription").then(r => r.json()).then(d => setIsPremium(d.is_premium ?? false));
+  }, []);
+  if (isPremium !== false) return null;
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 px-4 py-3 flex items-center gap-3">
+      <Lock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+      <p className="text-[13px] text-amber-800 dark:text-amber-200 flex-1">
+        You are on the <span className="font-semibold">Free plan</span>. Some features are locked.{" "}
+        Contact <span className="font-medium">{process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL}</span> to upgrade.
+      </p>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const supabase = createClient();
   const { ownerId } = useAuth();
@@ -289,6 +306,8 @@ export default function DashboardPage() {
         <h1 className="text-[28px] font-bold text-foreground leading-tight">Home</h1>
         <p className="text-[14px] text-muted-foreground mt-1">Your workspace at a glance.</p>
       </div>
+
+      <FreePlanBanner />
 
       <div className="flex gap-6 items-start">
         {/* Left */}

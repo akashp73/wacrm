@@ -12,7 +12,7 @@ import {
   Home, MessageSquare, Users, Send, LayoutTemplate,
   GitBranch, Zap, ListOrdered, Bot, Workflow, Cpu,
   BarChart2, Settings, Map,
-  LayoutGrid, ChevronRight, LogOut, Plus, X,
+  LayoutGrid, ChevronRight, LogOut, Plus, X, ShieldAlert,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -142,7 +142,7 @@ interface SidebarProps {
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, signOut, memberRole } = useAuth();
+  const { user, profile, signOut, memberRole } = useAuth();
   const totalUnread = useTotalUnread();
 
   // Collapse state — persisted in localStorage
@@ -308,6 +308,26 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             );
           })}
         </nav>
+
+        {/* ── Super Admin link (superadmin only) ── */}
+        {user?.email === process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL && (
+          <div className="px-2 pb-1">
+            <Link
+              href="/superadmin"
+              className={cn(
+                "flex items-center gap-2.5 rounded-md px-2.5 py-2 transition-colors text-[13px] font-medium",
+                pathname.startsWith("/superadmin")
+                  ? "bg-sidebar-active border-l-2 border-foreground rounded-l-none text-foreground"
+                  : "text-amber-600 dark:text-amber-400 hover:bg-sidebar-hover",
+                collapsed && "justify-center px-0 mx-0 rounded-none border-l-0",
+              )}
+              title={collapsed ? "Super Admin" : undefined}
+            >
+              <ShieldAlert className={cn("h-4 w-4 shrink-0", collapsed && "h-[18px] w-[18px]")} />
+              {!collapsed && <span className="flex-1 truncate">Super Admin</span>}
+            </Link>
+          </div>
+        )}
 
         {/* ── Credits widget ── */}
         {!collapsed && (
