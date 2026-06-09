@@ -1,4 +1,4 @@
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { executeBotForPhone } from '@/lib/bot-studio/runner'
 import { getByPath, normalizePhone, type PhoneFormatMode } from '@/lib/bot-studio/node-definitions'
@@ -43,17 +43,17 @@ export async function POST(request: Request, { params }: Params) {
     .maybeSingle()
 
   if (error || !bot) {
-    return NextResponse.json({ error: 'Bot not found' }, { status: 404 })
+    console.log(`[bot-studio webhook] bot ${botId} not found`)
+    return NextResponse.json({ received: true, skipped: 'bot_not_found' })
   }
 
-  // Capture + log receipt immediately — before any extraction/execution can fail —
-  // so the builder's "Capture Response" panel and execution history always reflect real traffic.
+  // Always capture the payload first — even if execution is skipped below.
   await admin.from('bots').update({ last_webhook_payload: body, last_webhook_at: new Date().toISOString() }).eq('id', botId)
-  await admin.from('bot_executions').insert({
-    bot_id: botId,
-    status: 'running',
-    log: [{ node_id: '-', node_type: 'webhook', status: 'ok', detail: 'Webhook payload received', payload: body }],
-  })
+
+  if (bot.status !== 'active') {
+    console.log(`[bot-studio webhook] bot ${botId} skipped — status is "${bot.status}"`)
+    return NextResponse.json({ received: true, skipped: 'bot_not_active' })
+  }
 
   const nodes = (bot.nodes ?? []) as BotNode[]
   const startNode = nodes.find(n => n.id === START_NODE_ID || (n.data?.node_type ?? n.type) === 'trigger')
@@ -68,30 +68,28 @@ export async function POST(request: Request, { params }: Params) {
   })
 
   if (!phone) {
+    console.log(`[bot-studio webhook] bot ${botId} skipped — no phone number found in payload (phone_field="${phoneField}")`)
     return NextResponse.json({
-      error: phoneField
-        ? `Could not find a phone number at "${phoneField}" in the request body`
-        : 'Request body must include a `phone` field, or the trigger must have a phone number field configured',
-    }, { status: 400 })
-  }
-  if (bot.status !== 'active') {
-    return NextResponse.json({ error: 'Bot is not active' }, { status: 409 })
+      received: true,
+      skipped: 'no_phone',
+      hint: phoneField
+        ? `Could not find a value at path "${phoneField}" in the request body`
+        : 'Configure the "Phone number field" in the webhook trigger, or include a "phone" key in the body',
+    })
   }
 
-  // Respond immediately so the sender doesn't time out — Next.js's `after` keeps the
-  // function alive (via the platform's waitUntil) to finish the WhatsApp API calls below.
-  after(async () => {
-    try {
-      await executeBotForPhone({
-        bot,
-        phone,
-        message: { text: typeof body.message === 'string' ? body.message : undefined, type: 'text' },
-        payload: body,
-      })
-    } catch (err) {
-      console.error(`[bot-studio webhook] bot ${botId} execution threw:`, err instanceof Error ? err.message : err)
-    }
-  })
+  console.log(`[bot-studio webhook] bot ${botId} executing for phone ${phone}`)
 
-  return NextResponse.json({ success: true, phone })
+  try {
+    await executeBotForPhone({
+      bot,
+      phone,
+      message: { text: typeof body.message === 'string' ? body.message : undefined, type: 'text' },
+      payload: body,
+    })
+  } catch (err) {
+    console.error(`[bot-studio webhook] bot ${botId} execution threw:`, err instanceof Error ? err.message : err)
+  }
+
+  return NextResponse.json({ received: true, phone })
 }

@@ -4,6 +4,72 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 
 const META_API_VERSION = 'v21.0'
 const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+const META_UPLOAD_BASE = 'https://graph.facebook.com/v25.0'
+
+/**
+ * Uploads a media file to Meta's Resumable Upload API and returns the
+ * opaque handle (e.g. "4:abc123…") required by media header components.
+ *
+ * Three-step process documented at:
+ * https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media#resumable-upload-api
+ */
+async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToken: string): Promise<string> {
+  // Download file from Supabase Storage (or any public URL)
+  const fileRes = await fetch(fileUrl)
+  if (!fileRes.ok) throw new Error(`Could not download media file (${fileRes.status})`)
+  const fileBuffer = await fileRes.arrayBuffer()
+  const contentType = fileRes.headers.get('content-type') || fallbackMime(headerType)
+  const fileName = decodeURIComponent(fileUrl.split('/').pop()?.split('?')[0] ?? `header.${extFor(headerType)}`)
+
+  // Step A — create upload session
+  const sessionUrl = new URL(`${META_UPLOAD_BASE}/app/uploads`)
+  sessionUrl.searchParams.set('file_length', String(fileBuffer.byteLength))
+  sessionUrl.searchParams.set('file_type', contentType)
+  sessionUrl.searchParams.set('file_name', fileName)
+
+  const sessionRes = await fetch(sessionUrl.toString(), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  const sessionData = await sessionRes.json() as Record<string, unknown>
+  if (!sessionRes.ok || !sessionData.id) {
+    console.error('[template-submit] Meta upload session error:', JSON.stringify(sessionData))
+    throw new Error((sessionData?.error as Record<string, unknown>)?.message as string ?? 'Failed to create Meta upload session')
+  }
+
+  // Step B — upload raw bytes to the session
+  const uploadRes = await fetch(`${META_UPLOAD_BASE}/${sessionData.id}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `OAuth ${accessToken}`,
+      'file_offset': '0',
+      'Content-Type': contentType,
+    },
+    body: fileBuffer,
+  })
+  const uploadData = await uploadRes.json() as Record<string, unknown>
+  if (!uploadRes.ok || !uploadData.h) {
+    console.error('[template-submit] Meta file upload error:', JSON.stringify(uploadData))
+    throw new Error((uploadData?.error as Record<string, unknown>)?.message as string ?? 'Failed to upload media to Meta')
+  }
+
+  // Step C — caller uses uploadData.h as header_handle
+  return uploadData.h as string
+}
+
+function fallbackMime(headerType: string): string {
+  if (headerType === 'image')    return 'image/jpeg'
+  if (headerType === 'video')    return 'video/mp4'
+  if (headerType === 'document') return 'application/pdf'
+  return 'application/octet-stream'
+}
+
+function extFor(headerType: string): string {
+  if (headerType === 'image')    return 'jpg'
+  if (headerType === 'video')    return 'mp4'
+  if (headerType === 'document') return 'pdf'
+  return 'bin'
+}
 
 /**
  * POST /api/whatsapp/templates/submit
@@ -55,8 +121,20 @@ export async function POST(request: Request) {
         text: header_text,
         example: header_text.includes('{{1}}') ? { header_text: [header_text] } : undefined,
       })
-    } else if (['image', 'video', 'document', 'location'].includes(header_type)) {
-      components.push({ type: 'HEADER', format: header_type.toUpperCase() })
+    } else if (header_type === 'location') {
+      components.push({ type: 'HEADER', format: 'LOCATION' })
+    } else if (['image', 'video', 'document'].includes(header_type)) {
+      const headerComponent: Record<string, unknown> = {
+        type: 'HEADER',
+        format: header_type.toUpperCase(),
+      }
+      if (header_media_url) {
+        // Meta requires the file handle from its Resumable Upload API —
+        // passing a URL or base64 directly is rejected with "Invalid parameter".
+        const handle = await uploadMediaToMeta(header_media_url, header_type, accessToken)
+        headerComponent.example = { header_handle: [handle] }
+      }
+      components.push(headerComponent)
     }
   }
 
@@ -107,7 +185,8 @@ export async function POST(request: Request) {
   const metaData = await metaRes.json()
 
   if (!metaRes.ok) {
-    const msg = metaData?.error?.message ?? `Meta error ${metaRes.status}`
+    console.error('[template-submit] Meta template creation error:', JSON.stringify(metaData))
+    const msg = (metaData?.error as Record<string, unknown>)?.message as string ?? `Meta error ${metaRes.status}`
     return NextResponse.json({ error: msg, meta: metaData }, { status: 400 })
   }
 
