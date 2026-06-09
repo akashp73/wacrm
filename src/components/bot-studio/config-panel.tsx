@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { X, Copy, Check } from 'lucide-react';
-import { NODE_DEFS, TRIGGER_LABELS, getByPath, type ActionType, type TriggerType } from '@/lib/bot-studio/node-definitions';
+import { NODE_DEFS, TRIGGER_LABELS, getByPath, normalizePhone, type ActionType, type TriggerType, type PhoneFormatMode } from '@/lib/bot-studio/node-definitions';
 
 export interface MessageTemplateOption {
   id: string;
@@ -150,6 +150,40 @@ export function ConfigPanel({
                 </p>
               )}
             </Field>
+
+            <Field label="Country code handling" hint="WhatsApp requires the full number with country code and no + sign (e.g. 919876543210)">
+              <select
+                value={(config.phone_format as string) ?? 'as_is'}
+                onChange={e => set({ phone_format: e.target.value })}
+                className={selectCls}
+              >
+                <option value="as_is">Use number exactly as received</option>
+                <option value="prepend_country_code">Add country code if missing</option>
+              </select>
+            </Field>
+
+            {(config.phone_format as string) === 'prepend_country_code' && (
+              <Field label="Country code" hint='Digits only, no + sign — e.g. "91" for India, "1" for US'>
+                <input
+                  value={(config.country_code as string) ?? ''}
+                  onChange={e => set({ country_code: e.target.value.replace(/\D/g, '') })}
+                  placeholder="e.g. 91"
+                  className={inputCls + " font-mono"}
+                />
+              </Field>
+            )}
+
+            {Boolean((config.phone_field as string)?.trim()) && capture?.payload != null && (
+              <p className="text-[10px] text-gray-400">
+                Number that will be sent to WhatsApp:{' '}
+                <span className="font-mono text-gray-600">
+                  {normalizePhone(String(getByPath(capture.payload, config.phone_field as string) ?? ''), {
+                    mode: (config.phone_format as PhoneFormatMode) ?? 'as_is',
+                    countryCode: config.country_code as string,
+                  }) || '— not found —'}
+                </span>
+              </p>
+            )}
 
             <div>
               <button onClick={openCapture}

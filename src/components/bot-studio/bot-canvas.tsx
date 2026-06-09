@@ -192,14 +192,19 @@ function Canvas({ botId, initialNodes, initialEdges, templates, onSave }: BotCan
   }, []);
 
   const changeTriggerType = useCallback((triggerType: TriggerType) => {
+    // Re-selecting the trigger that's already active must not wipe its saved config
+    // (e.g. the webhook's `phone_field`) — only reset when the type actually changes.
+    const startNode = nodes.find(n => n.id === START_NODE_ID);
+    const existingCfg = ((startNode?.data as Record<string, unknown> | undefined)?.config ?? {}) as Record<string, unknown>;
+    const cfg = existingCfg.trigger_type === triggerType ? existingCfg : { trigger_type: triggerType };
+
     setNodes(nds => nds.map(n => {
       if (n.id !== START_NODE_ID) return n;
-      const cfg = { trigger_type: triggerType };
       return { ...n, data: { ...(n.data as object), config: cfg, onEdit: () => openTriggerNode(cfg) } };
     }));
-    setPanelConfig({ trigger_type: triggerType });
+    setPanelConfig(cfg);
     setPanel({ kind: 'trigger', nodeId: START_NODE_ID, nodeType: triggerType });
-  }, [setNodes, openTriggerNode]);
+  }, [nodes, setNodes, openTriggerNode]);
 
   const addActionNode = useCallback((type: ActionType, position: { x: number; y: number }) => {
     const id = crypto.randomUUID();

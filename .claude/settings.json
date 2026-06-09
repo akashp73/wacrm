@@ -5,7 +5,12 @@
       "Bash(git -C /Users/akashpurohit/wacrm push origin main)",
       "Bash(npx eslint *)",
       "Bash(git diff *)",
-      "Bash(supabase --version)"
+      "Bash(supabase --version)",
+      "Bash(node -e ' *)",
+      "Bash(node test_cc_e2e.mjs)"
+    ],
+    "additionalDirectories": [
+      "/Users/akashpurohit"
     ]
   }
 }

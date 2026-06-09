@@ -95,6 +95,24 @@ export function getByPath(obj: unknown, path: string): unknown {
   }, obj)
 }
 
+export type PhoneFormatMode = 'as_is' | 'prepend_country_code'
+
+/**
+ * Normalizes a phone number for the WhatsApp Cloud API, which requires the full
+ * number with country code and no leading "+" (e.g. "919876543210").
+ *
+ * In "prepend_country_code" mode, a configured country code is added to numbers
+ * that look like bare local numbers (10 digits or fewer) and don't already start
+ * with it — leaving numbers that already include a country code untouched.
+ */
+export function normalizePhone(raw: string, opts: { mode?: PhoneFormatMode; countryCode?: string } = {}): string {
+  const digits = String(raw ?? '').replace(/\D/g, '')
+  if (!digits || opts.mode !== 'prepend_country_code') return digits
+  const cc = (opts.countryCode ?? '').replace(/\D/g, '')
+  if (!cc || digits.startsWith(cc) || digits.length > 10) return digits
+  return cc + digits
+}
+
 export function getPreview(type: string, cfg: Record<string, unknown>): string {
   switch (type) {
     case 'send_message':          return (cfg.text as string)?.slice(0, 60) || 'No message yet'

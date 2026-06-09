@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { executeBotForPhone } from '@/lib/bot-studio/runner'
-import { getByPath } from '@/lib/bot-studio/node-definitions'
+import { getByPath, normalizePhone, type PhoneFormatMode } from '@/lib/bot-studio/node-definitions'
 
 type Params = { params: Promise<{ botId: string }> }
 
@@ -34,6 +34,8 @@ export async function POST(request: Request, { params }: Params) {
     // empty/non-JSON body — fall through, phone will be missing
   }
 
+  console.log(`[bot-studio webhook] bot ${botId} received payload:`, JSON.stringify(body))
+
   const { data: bot, error } = await admin
     .from('bots')
     .select('id, user_id, status, trigger, nodes, edges')
@@ -44,9 +46,14 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'Bot not found' }, { status: 404 })
   }
 
-  // Capture every payload (even on inactive bots / extraction failures) so the
-  // builder's "Capture Response" UI always has a real example to map fields from.
+  // Capture + log receipt immediately — before any extraction/execution can fail —
+  // so the builder's "Capture Response" panel and execution history always reflect real traffic.
   await admin.from('bots').update({ last_webhook_payload: body, last_webhook_at: new Date().toISOString() }).eq('id', botId)
+  await admin.from('bot_executions').insert({
+    bot_id: botId,
+    status: 'running',
+    log: [{ node_id: '-', node_type: 'webhook', status: 'ok', detail: 'Webhook payload received', payload: body }],
+  })
 
   const nodes = (bot.nodes ?? []) as BotNode[]
   const startNode = nodes.find(n => n.id === START_NODE_ID || (n.data?.node_type ?? n.type) === 'trigger')
@@ -54,7 +61,11 @@ export async function POST(request: Request, { params }: Params) {
   const phoneField = (triggerCfg.phone_field as string) ?? ''
 
   const fromConfiguredPath = phoneField ? getByPath(body, phoneField) : undefined
-  const phone = String(fromConfiguredPath ?? body.phone ?? body.to ?? body.phone_number ?? '').trim()
+  const rawPhone = String(fromConfiguredPath ?? body.phone ?? body.to ?? body.phone_number ?? '').trim()
+  const phone = normalizePhone(rawPhone, {
+    mode: triggerCfg.phone_format as PhoneFormatMode,
+    countryCode: triggerCfg.country_code as string,
+  })
 
   if (!phone) {
     return NextResponse.json({
@@ -67,13 +78,20 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'Bot is not active' }, { status: 409 })
   }
 
-  // Run inline — Vercel can kill untracked background work after the response is sent.
-  await executeBotForPhone({
-    bot,
-    phone,
-    message: { text: typeof body.message === 'string' ? body.message : undefined, type: 'text' },
-    payload: body,
+  // Respond immediately so the sender doesn't time out — Next.js's `after` keeps the
+  // function alive (via the platform's waitUntil) to finish the WhatsApp API calls below.
+  after(async () => {
+    try {
+      await executeBotForPhone({
+        bot,
+        phone,
+        message: { text: typeof body.message === 'string' ? body.message : undefined, type: 'text' },
+        payload: body,
+      })
+    } catch (err) {
+      console.error(`[bot-studio webhook] bot ${botId} execution threw:`, err instanceof Error ? err.message : err)
+    }
   })
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, phone })
 }
