@@ -37,6 +37,10 @@ interface MetaTemplateComponent {
   type: string
   text?: string
   format?: string
+  example?: {
+    header_handle?: string[]
+    header_url?: string[]
+  }
 }
 
 interface MetaTemplate {
@@ -172,13 +176,23 @@ export async function POST() {
       const header = (t.components ?? []).find((c) => c.type === 'HEADER')
       const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
 
+      // Media headers (IMAGE/VIDEO/DOCUMENT) have no `text` — Meta returns
+      // an opaque handle/url in `example` instead. Text headers keep using
+      // `text` as header_content.
+      const headerFormat = header?.format?.toLowerCase() ?? null
+      const headerContent =
+        headerFormat === 'image' || headerFormat === 'video' || headerFormat === 'document'
+          ? header?.example?.header_handle?.[0] ?? header?.example?.header_url?.[0] ?? null
+          : header?.text ?? null
+
       const row = {
         user_id: user.id,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
-        header_type: header?.format?.toLowerCase() ?? null,
-        header_content: header?.text ?? null,
+        header_type: headerFormat,
+        header_content: headerContent,
+        components: t.components ?? null,
         body_text: body?.text ?? '',
         footer_text: footer?.text ?? null,
         status: normalizeStatus(t.status),

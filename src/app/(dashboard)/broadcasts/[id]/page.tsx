@@ -44,6 +44,7 @@ import {
   Pause,
   FileText,
 } from 'lucide-react';
+import { getHeaderMediaSrc } from '@/lib/whatsapp/template-media';
 import { toast } from 'sonner';
 import {
   getBroadcastStatus,
@@ -169,6 +170,7 @@ export default function BroadcastDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+  const [headerMediaError, setHeaderMediaError] = useState(false);
 
   const { sendBroadcast, isProcessing, progress } = useBroadcastSending();
 
@@ -201,6 +203,7 @@ export default function BroadcastDetailPage() {
         .eq('name', bc.template_name)
         .maybeSingle();
       setTemplate(tmpl ?? null);
+      setHeaderMediaError(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load broadcast');
     } finally {
@@ -496,14 +499,34 @@ export default function BroadcastDetailPage() {
               <div className="rounded-lg bg-[#0e1a12] p-3">
                 <div className="ml-auto max-w-[90%] overflow-hidden rounded-lg bg-violet-700/30 shadow-sm">
                   {template?.header_type === 'image' && template.header_content && (
-                    <img
-                      src={template.header_content}
-                      alt="Template header"
-                      className="max-h-48 w-full object-cover"
-                    />
+                    headerMediaError ? (
+                      <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="truncate">Image header (preview unavailable)</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={getHeaderMediaSrc(template.header_content) ?? undefined}
+                        alt="Template header"
+                        className="max-h-48 w-full object-cover"
+                        onError={() => setHeaderMediaError(true)}
+                      />
+                    )
                   )}
                   {template?.header_type === 'video' && template.header_content && (
-                    <video src={template.header_content} controls className="max-h-48 w-full" />
+                    headerMediaError ? (
+                      <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                        <FileText className="h-4 w-4 shrink-0" />
+                        <span className="truncate">Video header (preview unavailable)</span>
+                      </div>
+                    ) : (
+                      <video
+                        src={getHeaderMediaSrc(template.header_content) ?? undefined}
+                        controls
+                        className="max-h-48 w-full"
+                        onError={() => setHeaderMediaError(true)}
+                      />
+                    )
                   )}
                   {template?.header_type === 'document' && template.header_content && (
                     <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">

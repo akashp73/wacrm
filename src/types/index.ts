@@ -115,6 +115,7 @@ export interface MessageTemplate {
   language?: string;
   header_type?: 'text' | 'image' | 'video' | 'document';
   header_content?: string;
+  components?: Record<string, unknown>[];
   body_text: string;
   footer_text?: string;
   buttons?: Record<string, unknown>[];

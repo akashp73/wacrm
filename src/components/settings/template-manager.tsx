@@ -6,6 +6,7 @@ import { Plus, Trash2, Loader2, RefreshCw, Pencil, Search, Eye, FileText } from 
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { getHeaderMediaSrc } from '@/lib/whatsapp/template-media';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -59,6 +60,7 @@ export function TemplateManager() {
   const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<MessageTemplate | null>(null);
+  const [headerMediaError, setHeaderMediaError] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) { setLoading(false); return; }
@@ -204,7 +206,7 @@ export function TemplateManager() {
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setPreviewTarget(t)}
+                        onClick={() => { setPreviewTarget(t); setHeaderMediaError(false); }}
                         className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                       >
                         <Eye className="h-3.5 w-3.5" />
@@ -245,7 +247,7 @@ export function TemplateManager() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewTarget} onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}>
+      <Dialog open={!!previewTarget} onOpenChange={(open) => { if (!open) { setPreviewTarget(null); setHeaderMediaError(false); } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{previewTarget?.name}</DialogTitle>
@@ -263,18 +265,34 @@ export function TemplateManager() {
             <div className="rounded-lg bg-[#0e1a12] p-3">
               <div className="ml-auto max-w-[90%] overflow-hidden rounded-lg bg-violet-700/30 shadow-sm">
                 {previewTarget.header_type === 'image' && previewTarget.header_content && (
-                  <img
-                    src={previewTarget.header_content}
-                    alt="Template header"
-                    className="max-h-48 w-full object-cover"
-                  />
+                  headerMediaError ? (
+                    <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Image header (preview unavailable)</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={getHeaderMediaSrc(previewTarget.header_content) ?? undefined}
+                      alt="Template header"
+                      className="max-h-48 w-full object-cover"
+                      onError={() => setHeaderMediaError(true)}
+                    />
+                  )
                 )}
                 {previewTarget.header_type === 'video' && previewTarget.header_content && (
-                  <video
-                    src={previewTarget.header_content}
-                    controls
-                    className="max-h-48 w-full"
-                  />
+                  headerMediaError ? (
+                    <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Video header (preview unavailable)</span>
+                    </div>
+                  ) : (
+                    <video
+                      src={getHeaderMediaSrc(previewTarget.header_content) ?? undefined}
+                      controls
+                      className="max-h-48 w-full"
+                      onError={() => setHeaderMediaError(true)}
+                    />
+                  )
                 )}
                 {previewTarget.header_type === 'document' && previewTarget.header_content && (
                   <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">

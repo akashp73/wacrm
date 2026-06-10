@@ -13,7 +13,7 @@ const META_UPLOAD_BASE = 'https://graph.facebook.com/v25.0'
  * Three-step process documented at:
  * https://developers.facebook.com/docs/whatsapp/cloud-api/reference/media#resumable-upload-api
  */
-async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToken: string): Promise<string> {
+async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToken: string, wabaId: string): Promise<string> {
   // Download file from Supabase Storage (or any public URL)
   const fileRes = await fetch(fileUrl)
   if (!fileRes.ok) throw new Error(`Could not download media file (${fileRes.status})`)
@@ -21,8 +21,10 @@ async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToke
   const contentType = fileRes.headers.get('content-type') || fallbackMime(headerType)
   const fileName = decodeURIComponent(fileUrl.split('/').pop()?.split('?')[0] ?? `header.${extFor(headerType)}`)
 
-  // Step A — create upload session
-  const sessionUrl = new URL(`${META_UPLOAD_BASE}/app/uploads`)
+  // Step A — create upload session against the WhatsApp Business Account.
+  // ("/app/uploads" is not a valid Graph object — uploads must be created
+  // under the WABA id, e.g. POST /{WABA_ID}/uploads.)
+  const sessionUrl = new URL(`${META_UPLOAD_BASE}/${wabaId}/uploads`)
   sessionUrl.searchParams.set('file_length', String(fileBuffer.byteLength))
   sessionUrl.searchParams.set('file_type', contentType)
   sessionUrl.searchParams.set('file_name', fileName)
@@ -33,7 +35,7 @@ async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToke
   })
   const sessionData = await sessionRes.json() as Record<string, unknown>
   if (!sessionRes.ok || !sessionData.id) {
-    console.error('[template-submit] Meta upload session error:', JSON.stringify(sessionData))
+    console.error('[template-submit] Meta upload session error:', sessionRes.status, JSON.stringify(sessionData))
     throw new Error((sessionData?.error as Record<string, unknown>)?.message as string ?? 'Failed to create Meta upload session')
   }
 
@@ -49,7 +51,7 @@ async function uploadMediaToMeta(fileUrl: string, headerType: string, accessToke
   })
   const uploadData = await uploadRes.json() as Record<string, unknown>
   if (!uploadRes.ok || !uploadData.h) {
-    console.error('[template-submit] Meta file upload error:', JSON.stringify(uploadData))
+    console.error('[template-submit] Meta file upload error:', uploadRes.status, JSON.stringify(uploadData))
     throw new Error((uploadData?.error as Record<string, unknown>)?.message as string ?? 'Failed to upload media to Meta')
   }
 
@@ -131,8 +133,14 @@ export async function POST(request: Request) {
       if (header_media_url) {
         // Meta requires the file handle from its Resumable Upload API —
         // passing a URL or base64 directly is rejected with "Invalid parameter".
-        const handle = await uploadMediaToMeta(header_media_url, header_type, accessToken)
-        headerComponent.example = { header_handle: [handle] }
+        try {
+          const handle = await uploadMediaToMeta(header_media_url, header_type, accessToken, config.waba_id)
+          headerComponent.example = { header_handle: [handle] }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to upload header media to Meta'
+          console.error('[template-submit] Header media upload failed:', message)
+          return NextResponse.json({ error: message }, { status: 400 })
+        }
       }
       components.push(headerComponent)
     }
@@ -185,7 +193,7 @@ export async function POST(request: Request) {
   const metaData = await metaRes.json()
 
   if (!metaRes.ok) {
-    console.error('[template-submit] Meta template creation error:', JSON.stringify(metaData))
+    console.error('[template-submit] Meta template creation error:', metaRes.status, JSON.stringify(metaData))
     const msg = (metaData?.error as Record<string, unknown>)?.message as string ?? `Meta error ${metaRes.status}`
     return NextResponse.json({ error: msg, meta: metaData }, { status: 400 })
   }
