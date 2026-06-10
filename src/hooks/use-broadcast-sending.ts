@@ -41,7 +41,8 @@ interface BroadcastPayload {
 }
 
 interface UseBroadcastSendingReturn {
-  createAndSendBroadcast: (payload: BroadcastPayload) => Promise<string>;
+  saveBroadcastDraft: (payload: BroadcastPayload) => Promise<string>;
+  sendBroadcast: (broadcastId: string) => Promise<void>;
   isProcessing: boolean;
   progress: number;
 }
@@ -307,18 +308,22 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     return data ?? [];
   }
 
-  async function createAndSendBroadcast(payload: BroadcastPayload): Promise<string> {
+  /**
+   * Resolves the audience and writes the broadcast + its recipient
+   * rows with status='draft'. No messages are sent — this lets the
+   * user review the full recipient count and details on the
+   * broadcast detail page (and delete it if they made a mistake)
+   * before triggering `sendBroadcast`.
+   */
+  async function saveBroadcastDraft(payload: BroadcastPayload): Promise<string> {
     setIsProcessing(true);
     setProgress(0);
 
     const supabase = createClient();
 
     try {
-      // ── Step 0: Resolve current user ──────────────────────────────
       // broadcasts.user_id is NOT NULL + guarded by RLS
-      // (auth.uid() = user_id). Without this, the INSERT below was
-      // silently failing with 23502 / 42501 — the wizard would
-      // no-op with no feedback.
+      // (auth.uid() = user_id).
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -327,16 +332,14 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         throw new Error('You are not signed in.');
       }
 
-      // ── Step 1: Resolve audience contacts ─────────────────────────
-      setProgress(5);
+      setProgress(10);
       const contacts = await resolveAudience(payload.audience);
 
       if (contacts.length === 0) {
         throw new Error('No contacts found for this audience.');
       }
 
-      // ── Step 2: Create broadcast row ──────────────────────────────
-      setProgress(10);
+      setProgress(40);
       const { data: broadcast, error: broadcastError } = await supabase
         .from('broadcasts')
         .insert({
@@ -351,7 +354,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
           },
-          status: 'sending',
+          status: 'draft',
           total_recipients: contacts.length,
           sent_count: 0,
           delivered_count: 0,
@@ -368,8 +371,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         );
       }
 
-      // ── Step 3: Insert recipient rows ─────────────────────────────
-      setProgress(20);
+      setProgress(70);
       const recipientRows = contacts.map((contact) => ({
         broadcast_id: broadcast.id,
         contact_id: contact.id,
@@ -382,11 +384,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           .from('broadcast_recipients')
           .insert(batch);
         if (recipientError) {
-          // Previous impl logged and marched on — the broadcast then ran
-          // with an incomplete recipient set, so webhook status updates
-          // couldn't find some rows and the aggregate counts drifted.
           // Flip the broadcast to failed so the user sees the problem
-          // immediately, then throw to abort the send loop.
+          // immediately rather than a draft that silently has zero
+          // recipients.
           await supabase
             .from('broadcasts')
             .update({
@@ -400,16 +400,58 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         }
       }
 
-      // ── Step 4: Fetch recipients (joined contact) + preload custom values
-      setProgress(30);
+      setProgress(100);
+      return broadcast.id;
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  /**
+   * Sends a previously-saved draft broadcast. Loads the broadcast row
+   * (for template name/language/variables) and its pending recipients,
+   * flips status to 'sending', then runs the same batched send loop
+   * that `createAndSendBroadcast` used to run inline.
+   */
+  async function sendBroadcast(broadcastId: string): Promise<void> {
+    setIsProcessing(true);
+    setProgress(0);
+
+    const supabase = createClient();
+
+    try {
+      const { data: broadcast, error: broadcastFetchError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .single();
+
+      if (broadcastFetchError || !broadcast) {
+        throw new Error('Broadcast not found');
+      }
+
+      if (broadcast.status !== 'draft') {
+        throw new Error(`Broadcast is already "${broadcast.status}" — cannot send again`);
+      }
+
+      await supabase
+        .from('broadcasts')
+        .update({ status: 'sending' })
+        .eq('id', broadcastId);
+
+      setProgress(10);
       const { data: recipients, error: recipientsFetchError } = await supabase
         .from('broadcast_recipients')
         .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcast.id);
+        .eq('broadcast_id', broadcastId)
+        .eq('status', 'pending');
 
       if (recipientsFetchError || !recipients) {
         throw new Error('Failed to fetch broadcast recipients');
       }
+
+      const variables =
+        (broadcast.template_variables as Record<string, VariableMapping>) ?? {};
 
       // One bulk fetch of custom values for every contact in this
       // broadcast, avoiding N+1 during the send loop.
@@ -433,7 +475,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             phone: r.contact!.phone as string,
             params: r.contact
               ? resolveVariables(
-                  payload.variables,
+                  variables,
                   r.contact,
                   customValueIndex.get(r.contact.id),
                 )
@@ -448,8 +490,8 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
+              template_name: broadcast.template_name,
+              template_language: broadcast.template_language ?? 'en_US',
             }),
           });
 
@@ -515,7 +557,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         }
 
         const progressPct =
-          30 + Math.round(((i + batch.length) / totalRecipients) * 60);
+          10 + Math.round(((i + batch.length) / totalRecipients) * 85);
         setProgress(progressPct);
 
         if (i + SEND_BATCH_SIZE < recipients.length) {
@@ -523,22 +565,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         }
       }
 
-      // ── Step 5: Finalize status ───────────────────────────────────
       // Aggregate counts are maintained by the DB trigger (migration
       // 003); we only flip the final status here.
       setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
+      const finalStatus =
+        totalRecipients > 0 && failedCount === totalRecipients ? 'failed' : 'sent';
       await supabase
         .from('broadcasts')
         .update({ status: finalStatus })
-        .eq('id', broadcast.id);
+        .eq('id', broadcastId);
 
       setProgress(100);
-      return broadcast.id;
     } finally {
       setIsProcessing(false);
     }
   }
 
-  return { createAndSendBroadcast, isProcessing, progress };
+  return { saveBroadcastDraft, sendBroadcast, isProcessing, progress };
 }

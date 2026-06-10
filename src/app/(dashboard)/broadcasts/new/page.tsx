@@ -2,9 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/use-auth';
 import { MessageTemplate } from '@/types';
 import { Step1ChooseTemplate } from '@/components/broadcasts/step1-choose-template';
 import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audience';
@@ -22,8 +20,7 @@ const steps = [
 
 export default function NewBroadcastPage() {
   const router = useRouter();
-  const { ownerId } = useAuth();
-  const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const { saveBroadcastDraft, isProcessing, progress } = useBroadcastSending();
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
@@ -43,12 +40,22 @@ export default function NewBroadcastPage() {
   >({});
   const [name, setName] = useState('');
 
-  async function handleSend() {
-    if (!template) return;
+  /**
+   * Resolves the audience and saves the broadcast + its recipients as
+   * a draft (no messages sent). Redirects to the broadcast detail page,
+   * where the user can review every detail — recipient count, template
+   * preview, audience — and either send it or delete it if it was
+   * saved by mistake.
+   */
+  async function handleSave() {
+    if (!template || !name.trim()) {
+      toast.error('Give the broadcast a name before saving.');
+      return;
+    }
 
     try {
-      const broadcastId = await createAndSendBroadcast({
-        name,
+      const broadcastId = await saveBroadcastDraft({
+        name: name.trim(),
         template,
         audience: {
           type: audience.type,
@@ -59,61 +66,13 @@ export default function NewBroadcastPage() {
         },
         variables,
       });
+      toast.success('Broadcast saved — review it before sending.');
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
-      // Previously swallowed with console.error — the wizard would
-      // just no-op, leaving the user confused. Surface the reason.
-      const message = err instanceof Error ? err.message : 'Broadcast failed';
-      console.error('Broadcast failed:', err);
+      const message = err instanceof Error ? err.message : 'Failed to save broadcast';
+      console.error('Save broadcast failed:', err);
       toast.error(message);
     }
-  }
-
-  /**
-   * Writes a draft broadcast row — no recipients, no sending. The user
-   * can revisit it via the list page to finish the flow later. We
-   * don't persist the in-progress audience/variable config here
-   * because the current schema doesn't carry it past `audience_filter`
-   * and `template_variables`; those are enough for the user to
-   * recognize the draft but not to exactly round-trip into the wizard.
-   * A full resume-draft UX is a future polish.
-   */
-  async function handleSaveDraft() {
-    if (!template || !name.trim()) {
-      toast.error('Give the broadcast a name before saving a draft.');
-      return;
-    }
-    if (!ownerId) {
-      toast.error('Not signed in.');
-      return;
-    }
-    const supabase = createClient();
-
-    const { error } = await supabase.from('broadcasts').insert({
-      user_id: ownerId,
-      name: name.trim(),
-      template_name: template.name,
-      template_language: template.language ?? 'en_US',
-      template_variables: variables,
-      audience_filter: {
-        type: audience.type,
-        tagIds: audience.tagIds,
-      },
-      status: 'draft',
-      total_recipients: 0,
-      sent_count: 0,
-      delivered_count: 0,
-      read_count: 0,
-      replied_count: 0,
-      failed_count: 0,
-    });
-
-    if (error) {
-      toast.error(`Failed to save draft: ${error.message}`);
-      return;
-    }
-    toast.success('Draft saved');
-    router.push('/broadcasts');
   }
 
   return (
@@ -206,8 +165,7 @@ export default function NewBroadcastPage() {
               onNameChange={setName}
               template={template}
               audience={audience}
-              onSend={handleSend}
-              onSaveDraft={handleSaveDraft}
+              onSave={handleSave}
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}

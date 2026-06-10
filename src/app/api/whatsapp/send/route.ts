@@ -124,6 +124,30 @@ export async function POST(request: Request) {
 
     const accessToken = decrypt(config.access_token)
 
+    // Look up the template's header so media (image/video/document)
+    // headers are included — Meta rejects template sends with error
+    // #132012 when a media-header template is sent without a header
+    // parameter.
+    let templateHeaderType: 'image' | 'video' | 'document' | undefined
+    let templateHeaderMediaUrl: string | undefined
+    if (message_type === 'template') {
+      const { data: templateRow } = await supabase
+        .from('message_templates')
+        .select('header_type, header_content')
+        .eq('user_id', user.id)
+        .eq('name', template_name)
+        .maybeSingle()
+
+      if (
+        templateRow?.header_type === 'image' ||
+        templateRow?.header_type === 'video' ||
+        templateRow?.header_type === 'document'
+      ) {
+        templateHeaderType = templateRow.header_type
+        templateHeaderMediaUrl = templateRow.header_content ?? undefined
+      }
+    }
+
     // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
     // return from the send without waiting, so a failed upgrade just
     // means the next send tries again. The upgrade is idempotent —
@@ -161,6 +185,8 @@ export async function POST(request: Request) {
           templateName: template_name,
           language: template_language || 'en_US',
           params: template_params || [],
+          headerType: templateHeaderType,
+          headerMediaUrl: templateHeaderMediaUrl,
         })
         return result.messageId
       }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Loader2, RefreshCw, Pencil, Search } from 'lucide-react';
+import { Plus, Trash2, Loader2, RefreshCw, Pencil, Search, Eye, FileText } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -58,6 +58,7 @@ export function TemplateManager() {
   const [syncing, setSyncing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MessageTemplate | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<MessageTemplate | null>(null);
 
   useEffect(() => {
     if (authLoading || !user) { setLoading(false); return; }
@@ -202,6 +203,12 @@ export function TemplateManager() {
                   <TableCell className="text-muted-foreground">{new Date(t.created_at).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => setPreviewTarget(t)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
                       <Link
                         href={`/templates/${t.id}`}
                         className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -234,6 +241,77 @@ export function TemplateManager() {
             <Button onClick={handleDelete} disabled={deleting} className="bg-destructive text-white hover:bg-destructive/90">
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewTarget} onOpenChange={(open) => { if (!open) setPreviewTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{previewTarget?.name}</DialogTitle>
+            <DialogDescription>
+              {previewTarget && (
+                <span className="flex items-center gap-2 mt-1">
+                  <CategoryBadge category={previewTarget.category} />
+                  <StatusBadge status={previewTarget.status ?? 'Draft'} />
+                  <span className="text-muted-foreground">{previewTarget.language ?? 'en_US'}</span>
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {previewTarget && (
+            <div className="rounded-lg bg-[#0e1a12] p-3">
+              <div className="ml-auto max-w-[90%] overflow-hidden rounded-lg bg-violet-700/30 shadow-sm">
+                {previewTarget.header_type === 'image' && previewTarget.header_content && (
+                  <img
+                    src={previewTarget.header_content}
+                    alt="Template header"
+                    className="max-h-48 w-full object-cover"
+                  />
+                )}
+                {previewTarget.header_type === 'video' && previewTarget.header_content && (
+                  <video
+                    src={previewTarget.header_content}
+                    controls
+                    className="max-h-48 w-full"
+                  />
+                )}
+                {previewTarget.header_type === 'document' && previewTarget.header_content && (
+                  <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                    <FileText className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Document attachment</span>
+                  </div>
+                )}
+                <div className="px-3 py-2">
+                  {previewTarget.header_type === 'text' && previewTarget.header_content && (
+                    <p className="mb-1 text-sm font-semibold text-violet-50">
+                      {previewTarget.header_content}
+                    </p>
+                  )}
+                  <p className="whitespace-pre-wrap text-sm text-violet-50">
+                    {previewTarget.body_text}
+                  </p>
+                  {previewTarget.footer_text && (
+                    <p className="mt-1 text-xs text-violet-200/70">{previewTarget.footer_text}</p>
+                  )}
+                  {previewTarget.buttons && previewTarget.buttons.length > 0 && (
+                    <div className="mt-2 -mx-3 -mb-2 border-t border-violet-300/20">
+                      {previewTarget.buttons.map((b, i) => (
+                        <div
+                          key={i}
+                          className="border-t border-violet-300/20 px-3 py-2 text-center text-xs font-medium text-violet-200 first:border-t-0"
+                        >
+                          {(b as { text?: string }).text ?? 'Button'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewTarget(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

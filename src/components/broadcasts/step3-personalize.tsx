@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, Loader2, FileText } from 'lucide-react';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -321,10 +321,40 @@ export function Step3Personalize({
           )}
         </div>
         <div className="rounded-lg bg-[#0e1a12] p-3">
-          <div className="ml-auto max-w-[85%] rounded-lg bg-violet-700/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-violet-50">
-              {previewText}
-            </p>
+          <div className="ml-auto max-w-[85%] overflow-hidden rounded-lg bg-violet-700/30 shadow-sm">
+            {template.header_type === 'image' && template.header_content && (
+              <img
+                src={template.header_content}
+                alt="Template header"
+                className="max-h-48 w-full object-cover"
+              />
+            )}
+            {template.header_type === 'video' && template.header_content && (
+              <video
+                src={template.header_content}
+                controls
+                className="max-h-48 w-full"
+              />
+            )}
+            {template.header_type === 'document' && template.header_content && (
+              <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="truncate">Document attachment</span>
+              </div>
+            )}
+            <div className="px-3 py-2">
+              {template.header_type === 'text' && template.header_content && (
+                <p className="mb-1 text-sm font-semibold text-violet-50">
+                  {template.header_content}
+                </p>
+              )}
+              <p className="whitespace-pre-wrap text-sm text-violet-50">
+                {previewText}
+              </p>
+              {template.footer_text && (
+                <p className="mt-1 text-xs text-violet-200/70">{template.footer_text}</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

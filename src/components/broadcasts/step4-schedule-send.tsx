@@ -5,15 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { ArrowLeft, Send, Clock, Loader2, Users, Lock, Save } from 'lucide-react';
 
 interface AudienceConfig {
@@ -27,8 +18,7 @@ interface Step4Props {
   onNameChange: (name: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
-  onSend: () => void;
-  onSaveDraft?: () => void;
+  onSave: () => void;
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
@@ -39,14 +29,12 @@ export function Step4ScheduleSend({
   onNameChange,
   template,
   audience,
-  onSend,
-  onSaveDraft,
+  onSave,
   onBack,
   isProcessing,
   progress,
 }: Step4Props) {
   const [timing, setTiming] = useState<'now' | 'later'>('now');
-  const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
 
@@ -184,7 +172,7 @@ export function Step4ScheduleSend({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-foreground" />
-              <p className="text-sm font-medium text-foreground">Sending broadcast...</p>
+              <p className="text-sm font-medium text-foreground">Saving broadcast...</p>
             </div>
             <span className="text-xs font-medium text-foreground">{progress}%</span>
           </div>
@@ -209,64 +197,21 @@ export function Step4ScheduleSend({
         </Button>
 
         <div className="flex items-center gap-2">
-          {onSaveDraft && (
-            <Button
-              variant="outline"
-              onClick={onSaveDraft}
-              disabled={!name.trim() || isProcessing}
-              className="border-border text-foreground/70 hover:bg-muted disabled:opacity-50"
-            >
-              <Save className="h-4 w-4" />
-              Save as Draft
-            </Button>
-          )}
-
-          <Dialog open={showConfirm} onOpenChange={setShowConfirm}>
-          <DialogTrigger
-            render={
-              <Button
-                disabled={!name.trim() || isProcessing}
-                className="bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50"
-              />
-            }
+          <Button
+            onClick={onSave}
+            disabled={!name.trim() || isProcessing}
+            className="bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50"
           >
-            <Send className="h-4 w-4" />
-            Send Broadcast
-          </DialogTrigger>
-          <DialogContent className="border-border bg-card sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-foreground">Confirm Broadcast</DialogTitle>
-              <DialogDescription className="text-muted-foreground">
-                You are about to send this broadcast to{' '}
-                <span className="font-medium text-foreground">{estimatedReach.toLocaleString()}</span>{' '}
-                contacts using the{' '}
-                <span className="font-medium text-foreground">{template.name}</span> template.
-                This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowConfirm(false)}
-                className="border-border text-foreground/70"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowConfirm(false);
-                  onSend();
-                }}
-                className="bg-foreground text-background hover:bg-foreground/90"
-              >
-                <Send className="h-4 w-4" />
-                Confirm & Send
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Broadcast
+          </Button>
         </div>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Saving creates the broadcast and resolves its recipients without sending anything.
+        You&apos;ll review the full details — and can send or delete it — on the next page.
+      </p>
     </div>
   );
 }

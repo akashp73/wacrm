@@ -125,6 +125,25 @@ export async function POST(request: Request) {
 
     const accessToken = decrypt(config.access_token)
 
+    // Look up the template's header so media (image/video/document)
+    // headers are included in the send — Meta rejects template sends
+    // with error #132012 when a media-header template is sent without
+    // a header parameter.
+    const { data: templateRow } = await supabase
+      .from('message_templates')
+      .select('header_type, header_content')
+      .eq('user_id', user.id)
+      .eq('name', template_name)
+      .maybeSingle()
+
+    const headerType =
+      templateRow?.header_type === 'image' ||
+      templateRow?.header_type === 'video' ||
+      templateRow?.header_type === 'document'
+        ? templateRow.header_type
+        : undefined
+    const headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
@@ -157,6 +176,8 @@ export async function POST(request: Request) {
             templateName: template_name,
             language: template_language || 'en_US',
             params: recipient.params ?? [],
+            headerType,
+            headerMediaUrl,
           })
           sentMessageId = result.messageId
           lastError = null

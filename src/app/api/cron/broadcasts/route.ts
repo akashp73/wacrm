@@ -76,6 +76,25 @@ export async function GET(request: Request) {
 
       const accessToken = decrypt(config.access_token)
 
+      // Look up the template's header so media (image/video/document)
+      // headers are included — Meta rejects template sends with error
+      // #132012 when a media-header template is sent without a header
+      // parameter.
+      const { data: templateRow } = await admin
+        .from('message_templates')
+        .select('header_type, header_content')
+        .eq('user_id', broadcast.user_id)
+        .eq('name', broadcast.template_name)
+        .maybeSingle()
+
+      const headerType =
+        templateRow?.header_type === 'image' ||
+        templateRow?.header_type === 'video' ||
+        templateRow?.header_type === 'document'
+          ? templateRow.header_type
+          : undefined
+      const headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+
       // Load pending recipients
       const { data: recipients } = await admin
         .from('broadcast_recipients')
@@ -128,6 +147,8 @@ export async function GET(request: Request) {
             templateName: broadcast.template_name,
             language: broadcast.template_language ?? 'en_US',
             params,
+            headerType,
+            headerMediaUrl,
           })
 
           await admin

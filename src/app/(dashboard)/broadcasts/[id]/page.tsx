@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Broadcast, BroadcastRecipient, RecipientStatus } from '@/types';
+import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { Broadcast, BroadcastRecipient, MessageTemplate, RecipientStatus } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -20,6 +21,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   ArrowLeft,
   Loader2,
   Users,
@@ -32,6 +41,8 @@ import {
   Download,
   ChevronDown,
   Trash2,
+  Pause,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -148,6 +159,7 @@ export default function BroadcastDetailPage() {
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
+  const [template, setTemplate] = useState<MessageTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<RecipientStatus | 'all'>(
@@ -155,38 +167,50 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false);
+
+  const { sendBroadcast, isProcessing, progress } = useBroadcastSending();
+
+  const fetchData = useCallback(async () => {
+    try {
+      const supabase = createClient();
+
+      const { data: bc, error: bcError } = await supabase
+        .from('broadcasts')
+        .select('*')
+        .eq('id', broadcastId)
+        .single();
+
+      if (bcError) throw bcError;
+      setBroadcast(bc);
+
+      const { data: recs, error: recsError } = await supabase
+        .from('broadcast_recipients')
+        .select('*, contact:contacts(*)')
+        .eq('broadcast_id', broadcastId)
+        .order('created_at', { ascending: false });
+
+      if (recsError) throw recsError;
+      setRecipients(recs ?? []);
+
+      const { data: tmpl } = await supabase
+        .from('message_templates')
+        .select('*')
+        .eq('user_id', bc.user_id)
+        .eq('name', bc.template_name)
+        .maybeSingle();
+      setTemplate(tmpl ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load broadcast');
+    } finally {
+      setLoading(false);
+    }
+  }, [broadcastId]);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const supabase = createClient();
-
-        const { data: bc, error: bcError } = await supabase
-          .from('broadcasts')
-          .select('*')
-          .eq('id', broadcastId)
-          .single();
-
-        if (bcError) throw bcError;
-        setBroadcast(bc);
-
-        const { data: recs, error: recsError } = await supabase
-          .from('broadcast_recipients')
-          .select('*, contact:contacts(*)')
-          .eq('broadcast_id', broadcastId)
-          .order('created_at', { ascending: false });
-
-        if (recsError) throw recsError;
-        setRecipients(recs ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load broadcast');
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, [broadcastId]);
+  }, [fetchData]);
 
   const filteredRecipients = useMemo(
     () =>
@@ -243,6 +267,25 @@ export default function BroadcastDetailPage() {
     downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
   }
 
+  // Stop a broadcast that's stuck in 'sending' (e.g. the tab that was
+  // running the send loop was closed mid-broadcast). Marks it 'failed'
+  // so it reads as stopped and unblocks the Delete button below.
+  async function handleCancel() {
+    setCancelling(true);
+    const supabase = createClient();
+    const { error: cancelErr } = await supabase
+      .from('broadcasts')
+      .update({ status: 'failed' })
+      .eq('id', broadcastId);
+    setCancelling(false);
+    if (cancelErr) {
+      toast.error(`Failed to stop: ${cancelErr.message}`);
+      return;
+    }
+    setBroadcast((prev) => (prev ? { ...prev, status: 'failed' } : prev));
+    toast.success('Broadcast stopped');
+  }
+
   async function handleDelete() {
     setDeleting(true);
     const supabase = createClient();
@@ -261,6 +304,19 @@ export default function BroadcastDetailPage() {
     }
     toast.success('Broadcast deleted');
     router.push('/broadcasts');
+  }
+
+  async function handleConfirmSend() {
+    try {
+      await sendBroadcast(broadcastId);
+      setSendConfirmOpen(false);
+      toast.success('Broadcast sent');
+      await fetchData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send broadcast';
+      toast.error(message);
+      await fetchData();
+    }
   }
 
   if (loading) {
@@ -283,6 +339,21 @@ export default function BroadcastDetailPage() {
   }
 
   const status = getBroadcastStatus(broadcast.status);
+
+  const audienceFilter = (broadcast.audience_filter ?? {}) as {
+    type?: string;
+    tagIds?: string[];
+  };
+  const audienceLabel =
+    audienceFilter.type === 'all'
+      ? 'All Contacts'
+      : audienceFilter.type === 'tags'
+        ? `Tags (${audienceFilter.tagIds?.length ?? 0} selected)`
+        : audienceFilter.type === 'csv'
+          ? 'CSV Upload'
+          : audienceFilter.type === 'custom_field'
+            ? 'Custom Field'
+            : 'Custom';
 
   const funnelSteps: FunnelStep[] = [
     { label: 'Sent', value: stats.sent, color: 'bg-foreground' },
@@ -326,46 +397,188 @@ export default function BroadcastDetailPage() {
         {/* Delete — inline-confirm pattern matches the pipeline-settings
             "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
             because orphaning in-flight Meta messages would leave the
-            funnel inconsistent. */}
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">Delete this broadcast?</span>
+            funnel inconsistent. Use Stop first to mark a stuck broadcast
+            as failed, which unblocks Delete. */}
+        <div className="flex items-center gap-2">
+          {(broadcast.status === 'sending' || broadcast.status === 'scheduled') && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-              className="h-7 border-border bg-transparent text-foreground/70 hover:bg-muted"
+              onClick={handleCancel}
+              disabled={cancelling}
+              title="Stop this broadcast — marks it as failed and stops further sends"
+              className="border-amber-500/30 bg-transparent text-amber-400 hover:bg-amber-500/10 disabled:opacity-40"
+            >
+              {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+              Stop
+            </Button>
+          )}
+
+          {confirmDelete ? (
+            <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
+              <span className="text-red-300">Delete this broadcast?</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="h-7 border-border bg-transparent text-foreground/70 hover:bg-muted"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-7 bg-red-600 text-foreground hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Confirm'}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={broadcast.status === 'sending'}
+              onClick={() => setConfirmDelete(true)}
+              title={
+                broadcast.status === 'sending'
+                  ? 'Stop the broadcast first, then delete it'
+                  : 'Delete this broadcast'
+              }
+              className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Draft review — shown until the broadcast is actually sent. Lets
+          the user check the message, audience, and recipient count
+          before committing, and either send or delete from here. */}
+      {broadcast.status === 'draft' && (
+        <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Ready to review</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                This broadcast hasn&apos;t been sent yet. Check the details below, then send when ready.
+              </p>
+            </div>
+            <Button
+              onClick={() => setSendConfirmOpen(true)}
+              disabled={isProcessing}
+              className="bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50"
+            >
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Send Broadcast
+            </Button>
+          </div>
+
+          {isProcessing && (
+            <div className="space-y-1.5">
+              <div className="h-1.5 w-full rounded-full bg-muted">
+                <div
+                  className="h-1.5 rounded-full bg-foreground transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Sending… {progress}%</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Message preview */}
+            <div>
+              <p className="mb-2 text-xs text-muted-foreground">Message preview</p>
+              <div className="rounded-lg bg-[#0e1a12] p-3">
+                <div className="ml-auto max-w-[90%] overflow-hidden rounded-lg bg-violet-700/30 shadow-sm">
+                  {template?.header_type === 'image' && template.header_content && (
+                    <img
+                      src={template.header_content}
+                      alt="Template header"
+                      className="max-h-48 w-full object-cover"
+                    />
+                  )}
+                  {template?.header_type === 'video' && template.header_content && (
+                    <video src={template.header_content} controls className="max-h-48 w-full" />
+                  )}
+                  {template?.header_type === 'document' && template.header_content && (
+                    <div className="flex items-center gap-2 bg-violet-700/20 px-3 py-2 text-xs text-violet-100">
+                      <FileText className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Document attachment</span>
+                    </div>
+                  )}
+                  <div className="px-3 py-2">
+                    {template?.header_type === 'text' && template.header_content && (
+                      <p className="mb-1 text-sm font-semibold text-violet-50">{template.header_content}</p>
+                    )}
+                    <p className="whitespace-pre-wrap text-sm text-violet-50">
+                      {template?.body_text ?? `[template:${broadcast.template_name}]`}
+                    </p>
+                    {template?.footer_text && (
+                      <p className="mt-1 text-xs text-violet-200/70">{template.footer_text}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Campaign details */}
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Audience</p>
+                <p className="text-foreground">{audienceLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Recipients</p>
+                <p className="text-foreground">{broadcast.total_recipients.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Template</p>
+                <p className="text-foreground">{broadcast.template_name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Language</p>
+                <p className="text-foreground">{broadcast.template_language}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={sendConfirmOpen} onOpenChange={setSendConfirmOpen}>
+        <DialogContent className="border-border bg-card sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Send this broadcast?</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              This will send <span className="font-medium text-foreground">{broadcast.template_name}</span> to{' '}
+              <span className="font-medium text-foreground">{broadcast.total_recipients.toLocaleString()}</span>{' '}
+              recipient{broadcast.total_recipients !== 1 ? 's' : ''}. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSendConfirmOpen(false)}
+              disabled={isProcessing}
+              className="border-border text-foreground/70"
             >
               Cancel
             </Button>
             <Button
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="h-7 bg-red-600 text-foreground hover:bg-red-700 disabled:opacity-50"
+              onClick={handleConfirmSend}
+              disabled={isProcessing}
+              className="bg-foreground text-background hover:bg-foreground/90 disabled:opacity-50"
             >
-              {deleting ? 'Deleting…' : 'Confirm'}
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Confirm & Send
             </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={broadcast.status === 'sending'}
-            onClick={() => setConfirmDelete(true)}
-            title={
-              broadcast.status === 'sending'
-                ? 'Cannot delete while a broadcast is actively sending'
-                : 'Delete this broadcast'
-            }
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </Button>
-        )}
-      </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

@@ -79,6 +79,9 @@ export default function ContactsPage() {
 
   // Tag filter (multi-select) — shows contacts matching ANY selected tag
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
+  // "No tag added" filter — shows contacts with zero tags. Mutually
+  // exclusive with selectedTagIds (the two modes don't compose).
+  const [noTagFilter, setNoTagFilter] = useState(false);
 
   // Delete by tag
   const [deleteByTagOpen, setDeleteByTagOpen] = useState(false);
@@ -146,6 +149,13 @@ export default function ContactsPage() {
       }
     }
 
+    // "No tag added" — exclude any contact that carries at least one tag
+    let untaggedExcludeIds: string[] | null = null;
+    if (noTagFilter) {
+      const { data: ctRows } = await supabase.from('contact_tags').select('contact_id');
+      untaggedExcludeIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
+    }
+
     let query = supabase
       .from('contacts')
       .select('*', { count: 'exact' })
@@ -154,6 +164,9 @@ export default function ContactsPage() {
 
     if (tagMatchIds) {
       query = query.in('id', tagMatchIds);
+    }
+    if (untaggedExcludeIds && untaggedExcludeIds.length > 0) {
+      query = query.not('id', 'in', `(${untaggedExcludeIds.join(',')})`);
     }
 
     if (search.trim()) {
@@ -196,15 +209,13 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap]);
+  }, [supabase, page, search, selectedTagIds, noTagFilter, tagsMap]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
   }, [fetchTags]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
 
@@ -212,20 +223,26 @@ export default function ContactsPage() {
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectingAll(false);
-  }, [page, search, selectedTagIds]);
+  }, [page, search, selectedTagIds, noTagFilter]);
 
   // Reset to page 0 when the tag filter changes
   useEffect(() => {
     setPage(0);
-  }, [selectedTagIds]);
+  }, [selectedTagIds, noTagFilter]);
 
   function toggleTagFilter(tagId: string) {
+    setNoTagFilter(false);
     setSelectedTagIds((prev) => {
       const next = new Set(prev);
       if (next.has(tagId)) next.delete(tagId);
       else next.add(tagId);
       return next;
     });
+  }
+
+  function toggleNoTagFilter() {
+    setSelectedTagIds(new Set());
+    setNoTagFilter((prev) => !prev);
   }
 
   const allTags = Object.values(tagsMap).sort((a, b) => a.name.localeCompare(b.name));
@@ -311,11 +328,32 @@ export default function ContactsPage() {
     setBulkDeleting(true);
     try {
       if (selectingAll) {
-        // Delete all contacts matching the current search filter
+        // Delete all contacts matching the current search + tag filters
         let query = supabase.from('contacts').delete().neq('id', '');
         if (search.trim()) {
           const term = `%${search.trim()}%`;
           query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+        }
+        if (noTagFilter) {
+          const { data: ctRows } = await supabase.from('contact_tags').select('contact_id');
+          const taggedIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
+          if (taggedIds.length > 0) {
+            query = query.not('id', 'in', `(${taggedIds.join(',')})`);
+          }
+        } else if (selectedTagIds.size > 0) {
+          const { data: ctRows } = await supabase
+            .from('contact_tags')
+            .select('contact_id')
+            .in('tag_id', Array.from(selectedTagIds));
+          const tagMatchIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
+          if (tagMatchIds.length === 0) {
+            toast.success('0 contacts deleted');
+            setSelectedIds(new Set());
+            setSelectingAll(false);
+            setBulkDeleteOpen(false);
+            return;
+          }
+          query = query.in('id', tagMatchIds);
         }
         const { error } = await query;
         if (error) throw error;
@@ -457,13 +495,23 @@ export default function ContactsPage() {
           >
             <TagIcon className="size-4" />
             Filter by tag
-            {selectedTagIds.size > 0 && (
+            {(selectedTagIds.size > 0 || noTagFilter) && (
               <span className="ml-1 inline-flex items-center justify-center rounded-full bg-foreground text-background text-[10px] font-medium size-4">
-                {selectedTagIds.size}
+                {noTagFilter ? 1 : selectedTagIds.size}
               </span>
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="bg-card border-border min-w-48">
+            <DropdownMenuCheckboxItem
+              checked={noTagFilter}
+              closeOnClick={false}
+              onCheckedChange={toggleNoTagFilter}
+              className="text-foreground/70 focus:bg-muted focus:text-foreground"
+            >
+              <span className="inline-block size-2 rounded-full border border-muted-foreground" />
+              No tag added
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator className="bg-muted" />
             {allTags.length === 0 ? (
               <DropdownMenuLabel>No tags yet</DropdownMenuLabel>
             ) : (
@@ -483,11 +531,14 @@ export default function ContactsPage() {
                 </DropdownMenuCheckboxItem>
               ))
             )}
-            {selectedTagIds.size > 0 && (
+            {(selectedTagIds.size > 0 || noTagFilter) && (
               <>
                 <DropdownMenuSeparator className="bg-muted" />
                 <DropdownMenuItem
-                  onClick={() => setSelectedTagIds(new Set())}
+                  onClick={() => {
+                    setSelectedTagIds(new Set());
+                    setNoTagFilter(false);
+                  }}
                   className="text-foreground/70 focus:bg-muted focus:text-foreground"
                 >
                   <X className="size-4" />
@@ -498,8 +549,17 @@ export default function ContactsPage() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {selectedTagIds.size > 0 && (
+        {(selectedTagIds.size > 0 || noTagFilter) && (
           <div className="flex flex-wrap items-center gap-1.5">
+            {noTagFilter && (
+              <button
+                onClick={toggleNoTagFilter}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/70 transition-opacity hover:opacity-70"
+              >
+                No tag added
+                <X className="size-3" />
+              </button>
+            )}
             {Array.from(selectedTagIds).map((tagId) => {
               const tag = tagsMap[tagId];
               if (!tag) return null;
@@ -844,7 +904,24 @@ export default function ContactsPage() {
                   {search.trim() && (
                     <>
                       {' '}matching{' '}
-                      <span className="text-foreground font-medium">"{search}"</span>
+                      <span className="text-foreground font-medium">&quot;{search}&quot;</span>
+                    </>
+                  )}
+                  {noTagFilter && (
+                    <>
+                      {' '}with{' '}
+                      <span className="text-foreground font-medium">no tag added</span>
+                    </>
+                  )}
+                  {selectedTagIds.size > 0 && (
+                    <>
+                      {' '}tagged{' '}
+                      <span className="text-foreground font-medium">
+                        {Array.from(selectedTagIds)
+                          .map((id) => tagsMap[id]?.name)
+                          .filter(Boolean)
+                          .join(', ')}
+                      </span>
                     </>
                   )}
                   . Their conversations and messages will remain.
@@ -925,7 +1002,7 @@ export default function ContactsPage() {
                     </span>{' '}
                     tagged{' '}
                     <span className="text-foreground font-medium">
-                      "{tagsMap[deleteByTagId]?.name}"
+                      &quot;{tagsMap[deleteByTagId]?.name}&quot;
                     </span>
                     . Their conversations and messages will remain. This action cannot be undone.
                   </>

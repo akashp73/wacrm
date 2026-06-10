@@ -211,6 +211,14 @@ export interface SendTemplateMessageArgs {
   templateName: string
   language?: string
   params?: string[]
+  /**
+   * Header media for templates whose HEADER component is IMAGE/VIDEO/
+   * DOCUMENT. Meta rejects the send with error #132012 ("Parameter
+   * format does not match format in the template") if the template
+   * has a media header but no header parameter is supplied.
+   */
+  headerType?: 'image' | 'video' | 'document'
+  headerMediaUrl?: string
 }
 
 /**
@@ -227,6 +235,8 @@ export async function sendTemplateMessage(
     templateName,
     language = 'en_US',
     params,
+    headerType,
+    headerMediaUrl,
   } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
@@ -235,13 +245,24 @@ export async function sendTemplateMessage(
     language: { code: language },
   }
 
+  const components: Record<string, unknown>[] = []
+
+  if (headerType && headerMediaUrl) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: headerType, [headerType]: { link: headerMediaUrl } }],
+    })
+  }
+
   if (params && params.length > 0) {
-    template.components = [
-      {
-        type: 'body',
-        parameters: params.map((p) => ({ type: 'text', text: String(p) })),
-      },
-    ]
+    components.push({
+      type: 'body',
+      parameters: params.map((p) => ({ type: 'text', text: String(p) })),
+    })
+  }
+
+  if (components.length > 0) {
+    template.components = components
   }
 
   const response = await fetch(url, {
