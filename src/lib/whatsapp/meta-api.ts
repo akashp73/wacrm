@@ -248,9 +248,15 @@ export async function sendTemplateMessage(
   const components: Record<string, unknown>[] = []
 
   if (headerType && headerMediaUrl) {
+    // Locally-created templates store a public Supabase Storage URL in
+    // header_content (use `link`). Templates synced from Meta only have
+    // an opaque media handle (use `id`).
+    const mediaParam = /^https?:\/\//.test(headerMediaUrl)
+      ? { link: headerMediaUrl }
+      : { id: headerMediaUrl }
     components.push({
       type: 'header',
-      parameters: [{ type: headerType, [headerType]: { link: headerMediaUrl } }],
+      parameters: [{ type: headerType, [headerType]: mediaParam }],
     })
   }
 
