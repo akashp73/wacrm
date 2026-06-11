@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage, uploadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -142,7 +142,33 @@ export async function POST(request: Request) {
       templateRow?.header_type === 'document'
         ? templateRow.header_type
         : undefined
-    const headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+    let headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+
+    // Resolve header media to a Meta media `id` once, up front, instead
+    // of passing the raw URL to every send. Templates synced from Meta
+    // store a short-lived signed `scontent.whatsapp.net` URL in
+    // header_content — sending that as `link` fails with "Media upload
+    // error" because Meta's messaging pipeline can't fetch it. Uploading
+    // it once via the Media API yields a stable `id` that works for
+    // every recipient.
+    if (headerType && headerMediaUrl) {
+      try {
+        headerMediaUrl = await uploadMedia({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          fileUrl: headerMediaUrl,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to prepare header media'
+        console.error('[broadcast] header media upload failed:', message)
+        return NextResponse.json(
+          {
+            error: `Could not prepare template header media: ${message}. Try clicking "Sync from Meta" on the Templates page to refresh it, then retry.`,
+          },
+          { status: 400 }
+        )
+      }
+    }
 
     const results: BroadcastResult[] = []
     let sentCount = 0

@@ -296,6 +296,48 @@ export async function sendTemplateMessage(
 // Media
 // ============================================================
 
+export interface UploadMediaArgs {
+  phoneNumberId: string
+  accessToken: string
+  fileUrl: string
+}
+
+/**
+ * Downloads a file from `fileUrl` and uploads it to Meta's Media API
+ * (`POST /{phone_number_id}/media`), returning the resulting media ID.
+ *
+ * Used to resolve template header media into an `{ id }` reference
+ * before sending. This is required (not just preferred) for templates
+ * synced from Meta, whose `header_content` is a short-lived, signed
+ * `scontent.whatsapp.net` preview URL — passing that URL straight
+ * through as `link` fails with WhatsApp error "Media upload error"
+ * because that CDN link isn't fetchable by the messaging pipeline.
+ * Pre-uploading via the Media API works for any source URL.
+ */
+export async function uploadMedia(args: UploadMediaArgs): Promise<string> {
+  const { phoneNumberId, accessToken, fileUrl } = args
+  const fileRes = await fetch(fileUrl)
+  if (!fileRes.ok) throw new Error(`Could not download header media (${fileRes.status})`)
+  const buffer = await fileRes.arrayBuffer()
+  const contentType = fileRes.headers.get('content-type') || 'application/octet-stream'
+
+  const form = new FormData()
+  form.append('messaging_product', 'whatsapp')
+  form.append('file', new Blob([buffer], { type: contentType }))
+
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/media`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Media upload failed: ${response.status}`)
+  }
+  const data = await response.json()
+  if (!data.id) throw new Error('Media upload did not return an id')
+  return data.id as string
+}
+
 export interface GetMediaUrlArgs {
   mediaId: string
   accessToken: string

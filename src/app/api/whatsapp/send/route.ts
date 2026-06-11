@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage } from '@/lib/whatsapp/meta-api'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -145,6 +145,26 @@ export async function POST(request: Request) {
       ) {
         templateHeaderType = templateRow.header_type
         templateHeaderMediaUrl = templateRow.header_content ?? undefined
+
+        // Resolve to a Meta media `id` up front — see comment in
+        // /api/whatsapp/broadcast/route.ts for why `link` alone fails
+        // for templates synced from Meta (short-lived signed CDN URL).
+        if (templateHeaderMediaUrl) {
+          try {
+            templateHeaderMediaUrl = await uploadMedia({
+              phoneNumberId: config.phone_number_id,
+              accessToken,
+              fileUrl: templateHeaderMediaUrl,
+            })
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to prepare header media'
+            console.error('[whatsapp/send] header media upload failed:', message)
+            return NextResponse.json(
+              { error: `Could not prepare template header media: ${message}. Try clicking "Sync from Meta" on the Templates page to refresh it, then retry.` },
+              { status: 400 }
+            )
+          }
+        }
       }
     }
 

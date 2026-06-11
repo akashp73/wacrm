@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTemplateMessage, uploadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -93,7 +93,27 @@ export async function GET(request: Request) {
         templateRow?.header_type === 'document'
           ? templateRow.header_type
           : undefined
-      const headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+      let headerMediaUrl = headerType ? (templateRow?.header_content ?? undefined) : undefined
+
+      // Resolve header media to a Meta media `id` once per broadcast —
+      // see comment in /api/whatsapp/broadcast/route.ts for why `link`
+      // alone fails for templates synced from Meta.
+      if (headerType && headerMediaUrl) {
+        try {
+          headerMediaUrl = await uploadMedia({
+            phoneNumberId: config.phone_number_id,
+            accessToken,
+            fileUrl: headerMediaUrl,
+          })
+        } catch (err) {
+          console.error('[cron/broadcasts] header media upload failed:', err)
+          await admin
+            .from('broadcasts')
+            .update({ status: 'failed' })
+            .eq('id', broadcast.id)
+          continue
+        }
+      }
 
       // Load pending recipients
       const { data: recipients } = await admin
