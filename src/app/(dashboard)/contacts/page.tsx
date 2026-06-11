@@ -106,6 +106,7 @@ export default function ContactsPage() {
   // Bulk delete
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Tags map for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -324,56 +325,85 @@ export default function ContactsPage() {
     setDeleteTarget(null);
   }
 
+  // Deleting tens of thousands of contacts in one DELETE statement
+  // cascades to their conversations/messages and reliably hits
+  // Supabase's statement timeout, which surfaced to users as a generic
+  // "Failed to delete contacts" error. Batching keeps each request small
+  // enough to complete well within the timeout.
+  const BULK_DELETE_BATCH = 500;
+
+  async function deleteIdsInBatches(ids: string[], total: number, doneSoFar = 0) {
+    let done = doneSoFar;
+    for (let i = 0; i < ids.length; i += BULK_DELETE_BATCH) {
+      const chunk = ids.slice(i, i + BULK_DELETE_BATCH);
+      const { error } = await supabase.from('contacts').delete().in('id', chunk);
+      if (error) throw error;
+      done += chunk.length;
+      setBulkDeleteProgress({ done, total });
+    }
+    return done;
+  }
+
   async function handleBulkDelete() {
     setBulkDeleting(true);
+    setBulkDeleteProgress({ done: 0, total: selectionCount });
     try {
+      let totalDeleted = 0;
+
       if (selectingAll) {
-        // Delete all contacts matching the current search + tag filters
-        let query = supabase.from('contacts').delete().neq('id', '');
-        if (search.trim()) {
-          const term = `%${search.trim()}%`;
-          query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
-        }
-        if (noTagFilter) {
-          const { data: ctRows } = await supabase.from('contact_tags').select('contact_id');
-          const taggedIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
-          if (taggedIds.length > 0) {
-            query = query.not('id', 'in', `(${taggedIds.join(',')})`);
-          }
-        } else if (selectedTagIds.size > 0) {
-          const { data: ctRows } = await supabase
+        if (selectedTagIds.size > 0) {
+          const { data: ctRows, error: ctError } = await supabase
             .from('contact_tags')
             .select('contact_id')
             .in('tag_id', Array.from(selectedTagIds));
+          if (ctError) throw ctError;
           const tagMatchIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
-          if (tagMatchIds.length === 0) {
-            toast.success('0 contacts deleted');
-            setSelectedIds(new Set());
-            setSelectingAll(false);
-            setBulkDeleteOpen(false);
-            return;
+          totalDeleted = await deleteIdsInBatches(tagMatchIds, tagMatchIds.length);
+        } else {
+          // Page through contacts matching the current search/no-tag
+          // filter, deleting each batch as we go, until none remain.
+          let taggedIds: string[] = [];
+          if (noTagFilter) {
+            const { data: ctRows, error: ctError } = await supabase.from('contact_tags').select('contact_id');
+            if (ctError) throw ctError;
+            taggedIds = Array.from(new Set((ctRows ?? []).map((r) => r.contact_id)));
           }
-          query = query.in('id', tagMatchIds);
+          const total = selectionCount;
+          while (true) {
+            let selectQuery = supabase.from('contacts').select('id').limit(BULK_DELETE_BATCH);
+            if (search.trim()) {
+              const term = `%${search.trim()}%`;
+              selectQuery = selectQuery.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
+            }
+            if (taggedIds.length > 0) {
+              selectQuery = selectQuery.not('id', 'in', `(${taggedIds.join(',')})`);
+            }
+            const { data: rows, error: selError } = await selectQuery;
+            if (selError) throw selError;
+            if (!rows || rows.length === 0) break;
+            const ids = rows.map((r) => r.id);
+            totalDeleted = await deleteIdsInBatches(ids, total, totalDeleted);
+          }
         }
-        const { error } = await query;
-        if (error) throw error;
       } else {
         const ids = Array.from(selectedIds);
-        const { error } = await supabase.from('contacts').delete().in('id', ids);
-        if (error) throw error;
+        totalDeleted = await deleteIdsInBatches(ids, ids.length);
       }
 
-      const n = selectionCount;
-      toast.success(`${n} contact${n !== 1 ? 's' : ''} deleted`);
+      toast.success(`${totalDeleted} contact${totalDeleted !== 1 ? 's' : ''} deleted`);
       setSelectedIds(new Set());
       setSelectingAll(false);
       setBulkDeleteOpen(false);
       setPage(0);
       fetchContacts();
-    } catch {
-      toast.error('Failed to delete contacts');
+    } catch (err) {
+      console.error('Bulk delete failed:', err);
+      toast.error(
+        err instanceof Error ? `Failed to delete contacts: ${err.message}` : 'Failed to delete contacts'
+      );
     } finally {
       setBulkDeleting(false);
+      setBulkDeleteProgress(null);
     }
   }
 
@@ -936,12 +966,18 @@ export default function ContactsPage() {
                 </>
               )}
             </DialogDescription>
+            {bulkDeleteProgress && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Deleting {bulkDeleteProgress.done} of {bulkDeleteProgress.total}…
+              </p>
+            )}
           </DialogHeader>
           <DialogFooter className="bg-card border-border">
             <Button
               variant="outline"
               onClick={() => setBulkDeleteOpen(false)}
               className="border-border text-foreground/70 hover:bg-muted"
+              disabled={bulkDeleting}
             >
               Cancel
             </Button>
